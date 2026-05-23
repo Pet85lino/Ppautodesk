@@ -1,0 +1,206 @@
+{
+  "Uuid": "e7f3a2b1-4c8d-4e5f-9a0b-1c2d3e4f5a6b",
+  "IsCustomNode": false,
+  "Description": "Valida redes de tuberías contra normas ecuatorianas (Interagua/Amagua/MTOP). Reporta violaciones de pendiente, velocidad, cobertura y diámetro.",
+  "Name": "PipeNetworkValidator_Ecuador",
+  "ElementResolver": { "ResolutionMap": {} },
+  "Inputs": [
+    {
+      "Id": "input_standard",
+      "Name": "Normativa",
+      "Description": "Interagua | Amagua | MTOP | NEC | Todas",
+      "UsingDefaultValue": true,
+      "Level": 2,
+      "KeepListStructure": false
+    },
+    {
+      "Id": "input_network",
+      "Name": "NombreRed",
+      "Description": "Nombre de la red de tuberías a validar (vacío = todas)",
+      "UsingDefaultValue": true,
+      "Level": 2,
+      "KeepListStructure": false
+    }
+  ],
+  "Outputs": [
+    {
+      "Id": "output_violations",
+      "Name": "Violaciones",
+      "Description": "Lista de violaciones encontradas"
+    },
+    {
+      "Id": "output_summary",
+      "Name": "Resumen",
+      "Description": "Resumen estadístico de la validación"
+    }
+  ],
+  "DynamoVersion": "2.18.1",
+  "Nodes": [
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "n_standard_input",
+      "Inputs": [],
+      "Outputs": [{ "Id": "OUT_standard", "Name": "", "Description": "String" }],
+      "Replication": "Disabled",
+      "Description": "Crear una cadena de texto",
+      "Value": "Interagua"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "n_network_name",
+      "Inputs": [],
+      "Outputs": [{ "Id": "OUT_netname", "Name": "", "Description": "String" }],
+      "Replication": "Disabled",
+      "Description": "Nombre de la red (vacío = todas)",
+      "Value": ""
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "ExtensionNode",
+      "Engine": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "n_pipe_validator",
+      "Inputs": [
+        { "Id": "IN_standard", "Name": "IN[0]", "Description": "normativa" },
+        { "Id": "IN_netname",  "Name": "IN[1]", "Description": "red" }
+      ],
+      "Outputs": [
+        { "Id": "OUT_violations", "Name": "OUT", "Description": "Violaciones y resumen" }
+      ],
+      "Replication": "Disabled",
+      "Description": "Validador de redes de tuberías contra normas ecuatorianas",
+      "Script": "import clr\nimport sys\nimport math\n\nclr.AddReference('accoremgd')\nclr.AddReference('acdbmgd')\nclr.AddReference('Autodesk.Civil.ApplicationServices')\nclr.AddReference('Autodesk.Civil.DatabaseServices')\n\nfrom Autodesk.AutoCAD.ApplicationServices import Application\nfrom Autodesk.AutoCAD.DatabaseServices import OpenMode\nfrom Autodesk.Civil.ApplicationServices import CivilApplication\nfrom Autodesk.Civil.DatabaseServices import Network, Pipe, Structure\n\n# ── Límites normativos Ecuador ──────────────────────────────────────────\nINTERAGUA_MIN_SLOPE = {\n    200: 0.003, 250: 0.0025, 300: 0.002, 350: 0.0018,\n    400: 0.0015, 450: 0.0012, 500: 0.001, 600: 0.0009,\n    700: 0.0008, 800: 0.0007\n}\nAMAGUA_MIN_SLOPE = {\n    200: 0.004, 250: 0.003, 300: 0.0025, 350: 0.002,\n    400: 0.0015, 500: 0.001, 600: 0.0009\n}\nMIN_VELOCITY_MS   = 0.6\nMAX_VELOCITY_MS   = 5.0\nMIN_COVER_ROAD_M  = 1.2   # Interagua\nMIN_COVER_AMAG_M  = 1.2   # Amagua\nMAX_COVER_M       = 6.0\nSTD_DIAMETERS_MM  = {200, 250, 300, 350, 400, 450, 500, 600, 700, 800, 900, 1000, 1200}\nMINIMUM_DIAM_MM   = 200\n\ndef get_min_slope(diameter_mm, standard):\n    table = INTERAGUA_MIN_SLOPE if 'interagua' in standard.lower() else AMAGUA_MIN_SLOPE\n    keys = sorted(table.keys())\n    for k in keys:\n        if diameter_mm <= k:\n            return table[k]\n    return 0.0006\n\ndef manning_velocity(slope, diameter_m, n=0.009):\n    r = diameter_m / 4.0\n    return (1.0 / n) * (r ** (2.0/3.0)) * (abs(slope) ** 0.5)\n\n# ── Inputs ──────────────────────────────────────────────────────────────\nstandard   = str(IN[0]) if IN[0] else 'Interagua'\nnet_filter = str(IN[1]) if IN[1] else ''\n\ndoc = Application.DocumentManager.MdiActiveDocument\ncivil_doc = CivilApplication.ActiveDocument\ndb = doc.Database\n\nviolations = []\nsummary = {'total_pipes': 0, 'ok': 0, 'violations': 0, 'critical': 0}\n\nwith doc.LockDocument():\n    with db.TransactionManager.StartOpenCloseTransaction() as tr:\n        for net_id in civil_doc.GetPipeNetworkIds():\n            net = tr.GetObject(net_id, OpenMode.ForRead)\n            if net_filter and net.Name != net_filter:\n                continue\n\n            for pipe_id in net.GetPipeIds():\n                pipe = tr.GetObject(pipe_id, OpenMode.ForRead)\n                summary['total_pipes'] += 1\n\n                diam_mm   = pipe.InnerDiameterOrWidth * 1000.0\n                slope     = pipe.Slope\n                length    = pipe.Length2D\n                cover_s   = pipe.CoverDepthAtStart\n                cover_e   = pipe.CoverDepthAtEnd\n                min_cover = min(cover_s, cover_e)\n\n                pipe_violations = []\n\n                # 1. Diámetro mínimo\n                if diam_mm < MINIMUM_DIAM_MM:\n                    pipe_violations.append({\n                        'tipo': 'Diámetro',\n                        'mensaje': f'Diámetro {diam_mm:.0f}mm < mínimo {MINIMUM_DIAM_MM}mm ({standard})',\n                        'valor': diam_mm,\n                        'limite': MINIMUM_DIAM_MM,\n                        'unidad': 'mm',\n                        'severidad': 'CRÍTICO'\n                    })\n\n                # 2. Diámetro estándar\n                if round(diam_mm) not in STD_DIAMETERS_MM and diam_mm >= MINIMUM_DIAM_MM:\n                    pipe_violations.append({\n                        'tipo': 'DiámetroNoEstándar',\n                        'mensaje': f'Diámetro {diam_mm:.0f}mm no es estándar {standard}',\n                        'valor': diam_mm,\n                        'limite': 0,\n                        'unidad': 'mm',\n                        'severidad': 'ADVERTENCIA'\n                    })\n\n                # 3. Pendiente mínima\n                min_slope = get_min_slope(diam_mm, standard)\n                if abs(slope) < min_slope:\n                    pipe_violations.append({\n                        'tipo': 'PendienteMínima',\n                        'mensaje': f'Pendiente {abs(slope)*100:.3f}% < mínimo {min_slope*100:.3f}% para DN{diam_mm:.0f}',\n                        'valor': abs(slope),\n                        'limite': min_slope,\n                        'unidad': 'm/m',\n                        'severidad': 'CRÍTICO'\n                    })\n\n                # 4. Velocidad hidráulica (Manning)\n                diam_m = diam_mm / 1000.0\n                vel = manning_velocity(slope, diam_m)\n                if vel < MIN_VELOCITY_MS:\n                    pipe_violations.append({\n                        'tipo': 'VelocidadMínima',\n                        'mensaje': f'Velocidad {vel:.2f} m/s < {MIN_VELOCITY_MS} m/s (autolimpieza)',\n                        'valor': vel,\n                        'limite': MIN_VELOCITY_MS,\n                        'unidad': 'm/s',\n                        'severidad': 'ADVERTENCIA'\n                    })\n                if vel > MAX_VELOCITY_MS:\n                    pipe_violations.append({\n                        'tipo': 'VelocidadMáxima',\n                        'mensaje': f'Velocidad {vel:.2f} m/s > {MAX_VELOCITY_MS} m/s (erosión)',\n                        'valor': vel,\n                        'limite': MAX_VELOCITY_MS,\n                        'unidad': 'm/s',\n                        'severidad': 'CRÍTICO'\n                    })\n\n                # 5. Cobertura mínima\n                min_cov = MIN_COVER_ROAD_M if 'interagua' in standard.lower() else MIN_COVER_AMAG_M\n                if min_cover < min_cov:\n                    pipe_violations.append({\n                        'tipo': 'CoberturaInsuficiente',\n                        'mensaje': f'Cobertura mínima {min_cover:.2f}m < {min_cov}m requerida',\n                        'valor': min_cover,\n                        'limite': min_cov,\n                        'unidad': 'm',\n                        'severidad': 'CRÍTICO'\n                    })\n\n                if min_cover > MAX_COVER_M:\n                    pipe_violations.append({\n                        'tipo': 'CoberturaExcesiva',\n                        'mensaje': f'Cobertura {min_cover:.2f}m > {MAX_COVER_M}m máximo',\n                        'valor': min_cover,\n                        'limite': MAX_COVER_M,\n                        'unidad': 'm',\n                        'severidad': 'ADVERTENCIA'\n                    })\n\n                for v in pipe_violations:\n                    v.update({'red': net.Name, 'tuberia': pipe.Name,\n                               'diametro_mm': round(diam_mm, 1),\n                               'longitud_m': round(length, 2),\n                               'pendiente': round(slope, 6),\n                               'velocidad_ms': round(vel, 3),\n                               'cobertura_m': round(min_cover, 3)})\n                    violations.append(v)\n                    if v['severidad'] == 'CRÍTICO':\n                        summary['critical'] += 1\n                    summary['violations'] += 1\n\n                if not pipe_violations:\n                    summary['ok'] += 1\n\nsummary['violations_total'] = len(violations)\nsummary['normativa'] = standard\n\nOUT = [violations, summary]\n"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "FunctionSignature": "DSCore.List.GetItemAtIndex@var[]..[],int",
+      "NodeType": "FunctionNode",
+      "Id": "n_get_violations",
+      "Inputs": [
+        { "Id": "IN_list",  "Name": "list",  "Description": "Lista" },
+        { "Id": "IN_index", "Name": "index", "Description": "Índice" }
+      ],
+      "Outputs": [{ "Id": "OUT_item", "Name": "item", "Description": "Violaciones" }],
+      "Replication": "Auto",
+      "Description": "Obtener violaciones de la lista"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.ZeroTouch.DSFunction, DynamoCore",
+      "FunctionSignature": "DSCore.List.GetItemAtIndex@var[]..[],int",
+      "NodeType": "FunctionNode",
+      "Id": "n_get_summary",
+      "Inputs": [
+        { "Id": "IN_list2",  "Name": "list",  "Description": "Lista" },
+        { "Id": "IN_index2", "Name": "index", "Description": "Índice" }
+      ],
+      "Outputs": [{ "Id": "OUT_summary", "Name": "item", "Description": "Resumen" }],
+      "Replication": "Auto",
+      "Description": "Obtener resumen de la validación"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "n_index_0",
+      "Code": "0;",
+      "Inputs": [],
+      "Outputs": [{ "Id": "OUT_0", "Name": "0", "Description": "int" }],
+      "Replication": "Disabled",
+      "Description": "Índice 0 - Violaciones"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "n_index_1",
+      "Code": "1;",
+      "Inputs": [],
+      "Outputs": [{ "Id": "OUT_1", "Name": "1", "Description": "int" }],
+      "Replication": "Disabled",
+      "Description": "Índice 1 - Resumen"
+    }
+  ],
+  "Connectors": [
+    { "Start": "n_standard_input", "StartIndex": 0, "End": "n_pipe_validator", "EndIndex": 0 },
+    { "Start": "n_network_name",   "StartIndex": 0, "End": "n_pipe_validator", "EndIndex": 1 },
+    { "Start": "n_pipe_validator", "StartIndex": 0, "End": "n_get_violations", "EndIndex": 0 },
+    { "Start": "n_pipe_validator", "StartIndex": 0, "End": "n_get_summary",    "EndIndex": 0 },
+    { "Start": "n_index_0",        "StartIndex": 0, "End": "n_get_violations", "EndIndex": 1 },
+    { "Start": "n_index_1",        "StartIndex": 0, "End": "n_get_summary",    "EndIndex": 1 }
+  ],
+  "NodeViews": [
+    { "Id": "n_standard_input",  "IsSetAsInput": true,  "IsSetAsOutput": false, "Name": "Normativa",        "ShowGeometry": false, "Excluded": false, "X": 50,  "Y": 100 },
+    { "Id": "n_network_name",    "IsSetAsInput": true,  "IsSetAsOutput": false, "Name": "NombreRed",        "ShowGeometry": false, "Excluded": false, "X": 50,  "Y": 180 },
+    { "Id": "n_pipe_validator",  "IsSetAsInput": false, "IsSetAsOutput": false, "Name": "ValidarRed (CPython3)", "ShowGeometry": false, "Excluded": false, "X": 350, "Y": 140 },
+    { "Id": "n_index_0",         "IsSetAsInput": false, "IsSetAsOutput": false, "Name": "0",                "ShowGeometry": false, "Excluded": false, "X": 600, "Y": 100 },
+    { "Id": "n_index_1",         "IsSetAsInput": false, "IsSetAsOutput": false, "Name": "1",                "ShowGeometry": false, "Excluded": false, "X": 600, "Y": 200 },
+    { "Id": "n_get_violations",  "IsSetAsInput": false, "IsSetAsOutput": true,  "Name": "Violaciones",      "ShowGeometry": false, "Excluded": false, "X": 820, "Y": 100 },
+    { "Id": "n_get_summary",     "IsSetAsInput": false, "IsSetAsOutput": true,  "Name": "Resumen",          "ShowGeometry": false, "Excluded": false, "X": 820, "Y": 200 }
+  ],
+  "Linting": { "activeLinter": "None", "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a", "warningCount": 0, "errorCount": 0 },
+  "Dependencies": [],
+  "NodeLibraryDependencies": [
+    {
+      "Name": "Civil3DToolkit",
+      "Version": "1.1.4",
+      "ReferenceType": "Package",
+      "Nodes": []
+    }
+  ],
+  "Author": "Civil3D Intelligent Connector",
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": true,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.18.1.3960",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": { "Name": "Background Preview", "EyeX": -17.0, "EyeY": 24.0, "EyeZ": 50.0, "LookX": 12.0, "LookY": -13.0, "LookZ": -58.0, "UpX": 0.0, "UpY": 1.0, "UpZ": 0.0 },
+    "ConnectorPins": [],
+    "NodeCollapseMap": {},
+    "Annotations": [
+      {
+        "Id": "annotation_input",
+        "Title": "ENTRADAS - Configuración",
+        "DescriptionText": "Normativa: Interagua | Amagua | MTOP | NEC | Todas\nNombreRed: dejar vacío para validar todas",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": ["n_standard_input", "n_network_name"],
+        "HasTextBlockBackground": true,
+        "Background": "#FF48B9FF",
+        "PinnedNode": "n_standard_input",
+        "Left": 30.0,
+        "Top": 70.0,
+        "Width": 260.0,
+        "Height": 162.0,
+        "TextblockHeight": 36.0,
+        "ZIndex": 2
+      },
+      {
+        "Id": "annotation_output",
+        "Title": "SALIDAS - Resultados de validación",
+        "DescriptionText": "Violaciones: lista de dicts con detalles por tubería\nResumen: estadísticas totales de la validación",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": ["n_get_violations", "n_get_summary"],
+        "HasTextBlockBackground": true,
+        "Background": "#FF57B500",
+        "PinnedNode": "n_get_violations",
+        "Left": 795.0,
+        "Top": 70.0,
+        "Width": 200.0,
+        "Height": 162.0,
+        "TextblockHeight": 36.0,
+        "ZIndex": 2
+      }
+    ],
+    "X": 0.0,
+    "Y": 0.0,
+    "Zoom": 1.0
+  }
+}

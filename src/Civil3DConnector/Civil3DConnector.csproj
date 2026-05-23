@@ -1,0 +1,392 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Civil3DConnector.csproj
+       Autodesk Civil 3D Intelligent Connector
+       Targets .NET 8 (net8.0-windows) with conditional references for
+       Civil 3D 2025 / 2026 / 2027.
+
+       Build configurations
+       ────────────────────
+         Debug_2025   / Release_2025  →  net48,         CIVIL3D_2025
+         Debug_2026   / Release_2026  →  net8.0-windows, CIVIL3D_2026
+         Debug_2027   / Release_2027  →  net8.0-windows, CIVIL3D_2027
+         Debug / Release (default)    →  net8.0-windows, CIVIL3D_2026 + DEVELOPMENT
+
+       Override the install root per-version:
+         -p:Civil3DInstallPath="D:\ACA2026"
+  ═══════════════════════════════════════════════════════════════════════════ -->
+
+  <PropertyGroup>
+    <!-- Assembly identity -->
+    <AssemblyName>Civil3DConnector</AssemblyName>
+    <RootNamespace>Civil3DConnector</RootNamespace>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <Company>Civil3D Intelligent Connector</Company>
+    <Product>Civil3D Intelligent Connector for Ecuador</Product>
+    <Copyright>Copyright © 2025</Copyright>
+    <Description>
+      Advanced connector for Autodesk Civil 3D 2025-2027 with AI, Dynamo generation,
+      and Ecuadorian standards validation. Core infrastructure: VersionDetector,
+      ApiVersionAdapter, ConnectorBase, TransactionManager.
+    </Description>
+
+    <!-- Language settings -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <!-- XML documentation for IntelliSense consumers -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Suppress expected warnings when Civil 3D DLLs are absent on CI -->
+    <NoWarn>$(NoWarn);CS0436;CS1591</NoWarn>
+
+    <!-- Treat warnings as errors in Release builds -->
+    <TreatWarningsAsErrors Condition="'$(Configuration)'=='Release_2025' Or '$(Configuration)'=='Release_2026' Or '$(Configuration)'=='Release_2027'">true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Civil 3D 2025 — net48 (AutoCAD 2025 ships on .NET Framework 4.8)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug_2025' Or '$(Configuration)'=='Release_2025'">
+    <DefineConstants>CIVIL3D_2025;AUTOCAD_2025;WINDOWS</DefineConstants>
+    <TargetFramework>net48</TargetFramework>
+    <Civil3DVersion>2025</Civil3DVersion>
+    <Civil3DInstallPath Condition="'$(Civil3DInstallPath)'==''">C:\Program Files\Autodesk\AutoCAD Civil 3D 2025</Civil3DInstallPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Civil 3D 2026 — net8.0-windows
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug_2026' Or '$(Configuration)'=='Release_2026'">
+    <DefineConstants>CIVIL3D_2026;AUTOCAD_2026;WINDOWS</DefineConstants>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Civil3DVersion>2026</Civil3DVersion>
+    <Civil3DInstallPath Condition="'$(Civil3DInstallPath)'==''">C:\Program Files\Autodesk\AutoCAD Civil 3D 2026</Civil3DInstallPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Civil 3D 2027 — net8.0-windows
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug_2027' Or '$(Configuration)'=='Release_2027'">
+    <DefineConstants>CIVIL3D_2027;AUTOCAD_2027;WINDOWS</DefineConstants>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Civil3DVersion>2027</Civil3DVersion>
+    <Civil3DInstallPath Condition="'$(Civil3DInstallPath)'==''">C:\Program Files\Autodesk\AutoCAD Civil 3D 2027</Civil3DInstallPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Default configuration (Debug / Release without year suffix)
+       Targets 2026 so developers without a version-specific build can still
+       compile against the most common current release.
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <PropertyGroup Condition="'$(Configuration)'!='Debug_2025' And '$(Configuration)'!='Release_2025'
+                         And '$(Configuration)'!='Debug_2026' And '$(Configuration)'!='Release_2026'
+                         And '$(Configuration)'!='Debug_2027' And '$(Configuration)'!='Release_2027'">
+    <DefineConstants>CIVIL3D_2026;AUTOCAD_2026;DEVELOPMENT;WINDOWS</DefineConstants>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Civil3DVersion>2026</Civil3DVersion>
+    <Civil3DInstallPath Condition="'$(Civil3DInstallPath)'==''">C:\Program Files\Autodesk\AutoCAD Civil 3D 2026</Civil3DInstallPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       AutoCAD / Civil 3D 2025 DLL references  (net48)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup Condition="$(DefineConstants.Contains('CIVIL3D_2025'))">
+    <!-- AutoCAD core managed DLLs -->
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(Civil3DInstallPath)\AcCoreMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(Civil3DInstallPath)\AcDbMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcMgd">
+      <HintPath>$(Civil3DInstallPath)\AcMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <!-- Civil 3D application & database services -->
+    <Reference Include="Autodesk.Civil.ApplicationServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.ApplicationServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices.Styles">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.Styles.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Land.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Land.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Runtime">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Runtime.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DesignChecks">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DesignChecks.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <!-- Civil 3D UI/extension DLLs -->
+    <Reference Include="AeccXUiLand">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiLand.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiPipe">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiPipe.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiRoadway">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiRoadway.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiSurvey">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiSurvey.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiGrading">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiGrading.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       AutoCAD / Civil 3D 2026 DLL references  (net8.0-windows)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup Condition="$(DefineConstants.Contains('CIVIL3D_2026'))">
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(Civil3DInstallPath)\AcCoreMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(Civil3DInstallPath)\AcDbMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcMgd">
+      <HintPath>$(Civil3DInstallPath)\AcMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.ApplicationServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.ApplicationServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices.Styles">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.Styles.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Land.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Land.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Runtime">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Runtime.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiLand">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiLand.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiPipe">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiPipe.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiRoadway">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiRoadway.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiSurvey">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiSurvey.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiGrading">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiGrading.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <!-- 2026+: Pressure Pipe Networks -->
+    <Reference Include="AeccXUiPressurePipe">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiPressurePipe.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       AutoCAD / Civil 3D 2027 DLL references  (net8.0-windows)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup Condition="$(DefineConstants.Contains('CIVIL3D_2027'))">
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(Civil3DInstallPath)\AcCoreMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(Civil3DInstallPath)\AcDbMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AcMgd">
+      <HintPath>$(Civil3DInstallPath)\AcMgd.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.ApplicationServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.ApplicationServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.DatabaseServices.Styles">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.DatabaseServices.Styles.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Land.DatabaseServices">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Land.DatabaseServices.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="Autodesk.Civil.Runtime">
+      <HintPath>$(Civil3DInstallPath)\Autodesk.Civil.Runtime.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiLand">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiLand.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiPipe">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiPipe.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiRoadway">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiRoadway.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiSurvey">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiSurvey.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiGrading">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiGrading.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <Reference Include="AeccXUiPressurePipe">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiPressurePipe.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <!-- 2027-specific: Subassembly Composer -->
+    <Reference Include="AeccXUiSubassembly">
+      <HintPath>$(Civil3DInstallPath)\AeccXUiSubassembly.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       NuGet packages (shared across all versions)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup>
+    <!-- Windows Registry access used by VersionDetector -->
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+    <!-- Serialisation -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!-- Embedded SQLite for local caching / persistence -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <!-- Excel export -->
+    <PackageReference Include="EPPlus" Version="7.0.0" />
+    <!-- Geospatial operations -->
+    <PackageReference Include="NetTopologySuite" Version="2.5.0" />
+    <!-- Structured logging -->
+    <PackageReference Include="Serilog" Version="3.1.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <!-- CSV import/export -->
+    <PackageReference Include="CsvHelper" Version="31.0.0" />
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Core connector source files (explicit, so SDK does not exclude them)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup>
+    <Compile Include="Core\VersionDetector.cs" />
+    <Compile Include="Core\ApiVersionAdapter.cs" />
+    <Compile Include="Core\ConnectorBase.cs" />
+    <Compile Include="Core\TransactionManager.cs" />
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Content / data files
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <ItemGroup>
+    <None Update="Standards\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="config\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       Build diagnostics target
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <Target Name="PrintCivilVersion" BeforeTargets="Build">
+    <Message Text="[Civil3DConnector] Building for Civil 3D $(Civil3DVersion) — InstallPath: $(Civil3DInstallPath)"
+             Importance="high" />
+  </Target>
+
+</Project>

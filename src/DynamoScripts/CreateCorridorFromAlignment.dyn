@@ -1,0 +1,840 @@
+{
+  "Uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "IsCustomNode": false,
+  "Description": "Creates a Civil 3D corridor from a named alignment, profile, and assembly. Inputs: Alignment Name, Profile Name, Assembly Name. Output: Corridor object.",
+  "Name": "CreateCorridorFromAlignment",
+  "ElementResolver": {
+    "ResolutionMap": {}
+  },
+  "Inputs": [
+    {
+      "Id": "input_alignment_name",
+      "Name": "Alignment Name",
+      "Type": "string",
+      "Value": "Alignment-1",
+      "Description": "Name of the horizontal alignment in the drawing"
+    },
+    {
+      "Id": "input_profile_name",
+      "Name": "Profile Name",
+      "Type": "string",
+      "Value": "Design Profile",
+      "Description": "Name of the design profile on the alignment"
+    },
+    {
+      "Id": "input_assembly_name",
+      "Name": "Assembly Name",
+      "Type": "string",
+      "Value": "Standard Assembly",
+      "Description": "Name of the cross-section assembly"
+    },
+    {
+      "Id": "input_corridor_name",
+      "Name": "Corridor Name",
+      "Type": "string",
+      "Value": "Corridor-1",
+      "Description": "Name for the new corridor"
+    },
+    {
+      "Id": "input_start_station",
+      "Name": "Start Station (m)",
+      "Type": "number",
+      "Value": "0",
+      "Description": "Start station in metres"
+    },
+    {
+      "Id": "input_sample_spacing",
+      "Name": "Sample Spacing (m)",
+      "Type": "number",
+      "Value": "5",
+      "Description": "Cross-section sampling spacing in metres"
+    }
+  ],
+  "Outputs": [
+    {
+      "Id": "output_corridor",
+      "Name": "Corridor",
+      "Type": "var",
+      "Description": "The created Corridor object"
+    },
+    {
+      "Id": "output_status",
+      "Name": "Status",
+      "Type": "string",
+      "Description": "Creation status message"
+    }
+  ],
+  "Nodes": [
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_alignment_name_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_alignment_name",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string.",
+      "InputValue": "Alignment-1"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_profile_name_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_profile_name",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string.",
+      "InputValue": "Design Profile"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_assembly_name_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_assembly_name",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string.",
+      "InputValue": "Standard Assembly"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.StringInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_corridor_name_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_corridor_name",
+          "Name": "",
+          "Description": "String",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a string.",
+      "InputValue": "Corridor-1"
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.DoubleInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_start_station_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_start_station",
+          "Name": "",
+          "Description": "Double",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a number.",
+      "InputValue": 0
+    },
+    {
+      "ConcreteType": "CoreNodeModels.Input.DoubleInput, CoreNodeModels",
+      "NodeType": "ExtensionNode",
+      "Id": "node_sample_spacing_input",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_sample_spacing",
+          "Name": "",
+          "Description": "Double",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates a number.",
+      "InputValue": 5
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_get_alignment",
+      "Code": "Civil3D.CivilDocument.GetAlignmentByName(doc, alignmentName);",
+      "Inputs": [
+        {
+          "Id": "in_doc",
+          "Name": "doc",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "in_alignment_name",
+          "Name": "alignmentName",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "out_alignment",
+          "Name": "var",
+          "Description": "Alignment object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Retrieves the alignment by name from the Civil 3D document."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_get_profile",
+      "Code": "alignment.GetProfileByName(profileName);",
+      "Inputs": [
+        {
+          "Id": "in_alignment",
+          "Name": "alignment",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "in_profile_name",
+          "Name": "profileName",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "out_profile",
+          "Name": "var",
+          "Description": "Profile object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Gets the design profile from the alignment."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_get_assembly",
+      "Code": "Civil3D.CivilDocument.GetAssemblyByName(doc, assemblyName);",
+      "Inputs": [
+        {
+          "Id": "in_doc",
+          "Name": "doc",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "in_assembly_name",
+          "Name": "assemblyName",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "out_assembly",
+          "Name": "var",
+          "Description": "Assembly object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Gets the cross-section assembly by name."
+    },
+    {
+      "ConcreteType": "PythonNodeModels.PythonNode, PythonNodeModels",
+      "NodeType": "PythonScriptNode",
+      "Engine": "CPython3",
+      "EngineName": "CPython3",
+      "VariableInputPorts": true,
+      "Id": "node_create_corridor_python",
+      "Inputs": [
+        {
+          "Id": "py_in_alignment",
+          "Name": "IN[0]",
+          "Description": "Alignment object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "py_in_profile",
+          "Name": "IN[1]",
+          "Description": "Profile object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "py_in_assembly",
+          "Name": "IN[2]",
+          "Description": "Assembly object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "py_in_corridor_name",
+          "Name": "IN[3]",
+          "Description": "Corridor name string",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "py_in_start_station",
+          "Name": "IN[4]",
+          "Description": "Start station in metres",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        },
+        {
+          "Id": "py_in_sample_spacing",
+          "Name": "IN[5]",
+          "Description": "Sample spacing in metres",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "py_out_corridor",
+          "Name": "OUT",
+          "Description": "[corridor_object, status_string]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Disabled",
+      "Description": "Creates the corridor object with baseline, region, and rebuild.",
+      "Script": "# CreateCorridorFromAlignment – CPython 3 node\n# Inputs: alignment, profile, assembly, corridor_name, start_station, sample_spacing\n# Output: [corridor_object, status_message]\n\nimport clr\nclr.AddReference('AcMgd')\nclr.AddReference('AcDbMgd')\nclr.AddReference('AcCoreMgd')\nclr.AddReference('Autodesk.Civil.ApplicationServices')\nclr.AddReference('Autodesk.Civil.DatabaseServices')\nclr.AddReference('AeccXUiRoadway')\n\nimport traceback\n\ntry:\n    import Autodesk.AutoCAD.ApplicationServices as AcApp\n    import Autodesk.AutoCAD.DatabaseServices as AcDb\n    import Autodesk.Civil.ApplicationServices as CivilApp\n    import Autodesk.Civil.DatabaseServices as CivilDb\n\n    alignment    = IN[0]\n    profile      = IN[1]\n    assembly     = IN[2]\n    corridor_name  = str(IN[3]) if IN[3] else 'Corridor-1'\n    start_station  = float(IN[4]) if IN[4] is not None else 0.0\n    sample_spacing = float(IN[5]) if IN[5] is not None else 5.0\n\n    doc      = CivilApp.CivilApplication.ActiveDocument\n    acad_doc = AcApp.Application.DocumentManager.MdiActiveDocument\n    db       = acad_doc.Database\n\n    corridor = None\n    status   = ''\n\n    with AcDb.Transaction() as tr:\n        # Determine end station from alignment length\n        align_obj = tr.GetObject(alignment.ObjectId, AcDb.OpenMode.ForRead)\n        end_station = float(align_obj.EndingStation)\n\n        # Create corridor\n        corridors = doc.CorridorCollection\n        corridor_id = corridors.Add(\n            corridor_name,\n            alignment.ObjectId,\n            profile.ObjectId,\n            assembly.ObjectId\n        )\n        corridor = tr.GetObject(corridor_id, AcDb.OpenMode.ForWrite)\n\n        # Add baseline\n        baseline = corridor.Baselines.Add(\n            alignment.ObjectId,\n            profile.ObjectId\n        )\n\n        # Add region from start to end\n        region = baseline.Regions.Add(\n            assembly.ObjectId,\n            start_station,\n            end_station\n        )\n        region.FrequencyToApplyAssemblies = sample_spacing\n\n        # Rebuild the corridor\n        corridor.Rebuild()\n\n        tr.Commit()\n\n    status = (\n        f'SUCCESS: Corridor \"{corridor_name}\" created. '\n        f'Stations {start_station:.2f}–{end_station:.2f} m. '\n        f'Spacing: {sample_spacing} m.'\n    )\n    OUT = [corridor, status]\n\nexcept Exception as e:\n    OUT = [None, f'ERROR: {str(e)}\\n{traceback.format_exc()}']\n"
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_output_corridor",
+      "Code": "result[0];",
+      "Inputs": [
+        {
+          "Id": "in_result",
+          "Name": "result",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "out_corridor_final",
+          "Name": "Corridor",
+          "Description": "The created Corridor object",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Extracts the corridor object from the Python node result."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_output_status",
+      "Code": "result[1];",
+      "Inputs": [
+        {
+          "Id": "in_result",
+          "Name": "result",
+          "Description": "var[]..[]",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Outputs": [
+        {
+          "Id": "out_status_final",
+          "Name": "Status",
+          "Description": "Status message string",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Extracts the status message from the Python node result."
+    },
+    {
+      "ConcreteType": "Dynamo.Graph.Nodes.CodeBlockNodeModel, DynamoCore",
+      "NodeType": "CodeBlockNode",
+      "Id": "node_active_doc",
+      "Code": "Civil3D.CivilDocument.ActiveDocument;",
+      "Inputs": [],
+      "Outputs": [
+        {
+          "Id": "out_doc",
+          "Name": "doc",
+          "Description": "Active CivilDocument",
+          "UsingDefaultValue": false,
+          "Level": 2,
+          "UseLevels": false,
+          "KeepListStructure": false
+        }
+      ],
+      "Replication": "Auto",
+      "Description": "Gets the active Civil 3D document."
+    }
+  ],
+  "Connectors": [
+    {
+      "Start": "node_alignment_name_input",
+      "StartIndex": 0,
+      "End": "node_get_alignment",
+      "EndIndex": 1
+    },
+    {
+      "Start": "node_profile_name_input",
+      "StartIndex": 0,
+      "End": "node_get_profile",
+      "EndIndex": 1
+    },
+    {
+      "Start": "node_assembly_name_input",
+      "StartIndex": 0,
+      "End": "node_get_assembly",
+      "EndIndex": 1
+    },
+    {
+      "Start": "node_corridor_name_input",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 3
+    },
+    {
+      "Start": "node_start_station_input",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 4
+    },
+    {
+      "Start": "node_sample_spacing_input",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 5
+    },
+    {
+      "Start": "node_active_doc",
+      "StartIndex": 0,
+      "End": "node_get_alignment",
+      "EndIndex": 0
+    },
+    {
+      "Start": "node_active_doc",
+      "StartIndex": 0,
+      "End": "node_get_assembly",
+      "EndIndex": 0
+    },
+    {
+      "Start": "node_get_alignment",
+      "StartIndex": 0,
+      "End": "node_get_profile",
+      "EndIndex": 0
+    },
+    {
+      "Start": "node_get_alignment",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 0
+    },
+    {
+      "Start": "node_get_profile",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 1
+    },
+    {
+      "Start": "node_get_assembly",
+      "StartIndex": 0,
+      "End": "node_create_corridor_python",
+      "EndIndex": 2
+    },
+    {
+      "Start": "node_create_corridor_python",
+      "StartIndex": 0,
+      "End": "node_output_corridor",
+      "EndIndex": 0
+    },
+    {
+      "Start": "node_create_corridor_python",
+      "StartIndex": 0,
+      "End": "node_output_status",
+      "EndIndex": 0
+    }
+  ],
+  "Dependencies": [],
+  "NodeLibraryDependencies": [
+    {
+      "Name": "Civil3DToolkitForDynamo",
+      "Version": "1.1.0.0",
+      "ReferenceType": "Package",
+      "Nodes": [
+        "node_get_alignment",
+        "node_get_profile",
+        "node_get_assembly",
+        "node_active_doc"
+      ]
+    }
+  ],
+  "EnableLegacyPolyCurveBehavior": null,
+  "Thumbnail": "",
+  "GraphDocumentationURL": null,
+  "ExtensionWorkspaceData": [
+    {
+      "ExtensionGuid": "28992e1d-abb9-417f-8b1b-05e053bee670",
+      "Name": "Properties",
+      "Version": "2.19",
+      "Data": {}
+    }
+  ],
+  "Author": "Civil3D AI Connector",
+  "Linting": {
+    "activeLinter": "None",
+    "activeLinterId": "7b75fb44-43fd-4631-a878-29f4d5d8399a",
+    "warningCount": 0,
+    "errorCount": 0
+  },
+  "Bindings": [],
+  "View": {
+    "Dynamo": {
+      "ScaleFactor": 1.0,
+      "HasRunWithoutCrash": false,
+      "IsVisibleInDynamoLibrary": true,
+      "Version": "2.17.0.3598",
+      "RunType": "Manual",
+      "RunPeriod": "1000"
+    },
+    "Camera": {
+      "Name": "_Background Preview",
+      "EyeX": -17.0,
+      "EyeY": 24.0,
+      "EyeZ": 50.0,
+      "LookX": 12.0,
+      "LookY": -13.0,
+      "LookZ": -58.0,
+      "UpX": 0.0,
+      "UpY": 1.0,
+      "UpZ": 0.0
+    },
+    "ConnectorPins": [],
+    "NodeViews": [
+      {
+        "Name": "String (Alignment Name)",
+        "ShowGeometry": true,
+        "Id": "node_alignment_name_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 80.0
+      },
+      {
+        "Name": "String (Profile Name)",
+        "ShowGeometry": true,
+        "Id": "node_profile_name_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 180.0
+      },
+      {
+        "Name": "String (Assembly Name)",
+        "ShowGeometry": true,
+        "Id": "node_assembly_name_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 280.0
+      },
+      {
+        "Name": "String (Corridor Name)",
+        "ShowGeometry": true,
+        "Id": "node_corridor_name_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 380.0
+      },
+      {
+        "Name": "Number (Start Station)",
+        "ShowGeometry": true,
+        "Id": "node_start_station_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 480.0
+      },
+      {
+        "Name": "Number (Sample Spacing)",
+        "ShowGeometry": true,
+        "Id": "node_sample_spacing_input",
+        "IsSetAsInput": true,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 50.0,
+        "Y": 580.0
+      },
+      {
+        "Name": "Active Document",
+        "ShowGeometry": true,
+        "Id": "node_active_doc",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 280.0,
+        "Y": 30.0
+      },
+      {
+        "Name": "Get Alignment By Name",
+        "ShowGeometry": true,
+        "Id": "node_get_alignment",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 500.0,
+        "Y": 80.0
+      },
+      {
+        "Name": "Get Profile By Name",
+        "ShowGeometry": true,
+        "Id": "node_get_profile",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 720.0,
+        "Y": 180.0
+      },
+      {
+        "Name": "Get Assembly By Name",
+        "ShowGeometry": true,
+        "Id": "node_get_assembly",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 500.0,
+        "Y": 280.0
+      },
+      {
+        "Name": "Create Corridor (Python)",
+        "ShowGeometry": true,
+        "Id": "node_create_corridor_python",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": false,
+        "Excluded": false,
+        "X": 960.0,
+        "Y": 200.0
+      },
+      {
+        "Name": "Corridor Output",
+        "ShowGeometry": true,
+        "Id": "node_output_corridor",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": true,
+        "Excluded": false,
+        "X": 1200.0,
+        "Y": 150.0
+      },
+      {
+        "Name": "Status Output",
+        "ShowGeometry": true,
+        "Id": "node_output_status",
+        "IsSetAsInput": false,
+        "IsSetAsOutput": true,
+        "Excluded": false,
+        "X": 1200.0,
+        "Y": 280.0
+      }
+    ],
+    "Annotations": [
+      {
+        "Id": "group_inputs",
+        "Title": "INPUTS",
+        "DescriptionText": "Alignment, Profile, Assembly names and corridor parameters",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "node_alignment_name_input",
+          "node_profile_name_input",
+          "node_assembly_name_input",
+          "node_corridor_name_input",
+          "node_start_station_input",
+          "node_sample_spacing_input"
+        ],
+        "HasNestedGroups": false,
+        "Left": 30.0,
+        "Top": 50.0,
+        "Width": 230.0,
+        "Height": 570.0,
+        "FontSize": 14.0,
+        "GroupStyleId": "883066aa-1fe2-44a4-9bd1-c3df86bfe9f6",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      },
+      {
+        "Id": "group_civil3d_nodes",
+        "Title": "CIVIL 3D OBJECT RETRIEVAL",
+        "DescriptionText": "Fetch alignment, profile and assembly from drawing",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "node_active_doc",
+          "node_get_alignment",
+          "node_get_profile",
+          "node_get_assembly"
+        ],
+        "HasNestedGroups": false,
+        "Left": 260.0,
+        "Top": 0.0,
+        "Width": 600.0,
+        "Height": 380.0,
+        "FontSize": 14.0,
+        "GroupStyleId": "07655dc1-2d65-4fed-8d6a-37235d3e3a8d",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFFFC999"
+      },
+      {
+        "Id": "group_corridor_creation",
+        "Title": "CORRIDOR CREATION",
+        "DescriptionText": "Python node: creates corridor, baseline, region and rebuilds",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "node_create_corridor_python"
+        ],
+        "HasNestedGroups": false,
+        "Left": 940.0,
+        "Top": 120.0,
+        "Width": 220.0,
+        "Height": 200.0,
+        "FontSize": 14.0,
+        "GroupStyleId": "4d68be4a-a04d-4945-9dd5-cdf61079d790",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFB9F9E1"
+      },
+      {
+        "Id": "group_outputs",
+        "Title": "OUTPUTS",
+        "DescriptionText": "Corridor object and status message",
+        "IsExpanded": true,
+        "WidthAdjustment": 0.0,
+        "HeightAdjustment": 0.0,
+        "Nodes": [
+          "node_output_corridor",
+          "node_output_status"
+        ],
+        "HasNestedGroups": false,
+        "Left": 1180.0,
+        "Top": 120.0,
+        "Width": 220.0,
+        "Height": 220.0,
+        "FontSize": 14.0,
+        "GroupStyleId": "883066aa-1fe2-44a4-9bd1-c3df86bfe9f6",
+        "InitialTop": 0.0,
+        "InitialHeight": 0.0,
+        "TextblockHeight": 0.0,
+        "Background": "#FFC1D676"
+      }
+    ],
+    "X": 0.0,
+    "Y": 0.0,
+    "Zoom": 0.75
+  }
+}

@@ -1,0 +1,330 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Interagua Pipe Network Standards",
+  "description": "Normas técnicas de INTERAGUA (Empresa de Agua Potable y Alcantarillado de Guayaquil) para diseño de redes de tuberías.",
+  "version": "2.1",
+  "authority": "INTERAGUA - Guayaquil, Ecuador",
+  "lastUpdated": "2024-01-01",
+  "references": [
+    "Normas para Diseño de Sistemas de Agua Potable y Alcantarillado - INTERAGUA 2019",
+    "Reglamento Técnico para Instalaciones Internas de Agua Potable y Alcantarillado",
+    "INEN 1373 - Tuberías de PVC para alcantarillado",
+    "INEN 1374 - Tuberías de PEAD para agua potable"
+  ],
+
+  "waterSupply": {
+    "description": "Especificaciones para redes de agua potable (agua potable)",
+    "pressureZones": {
+      "minimum_pressure_kPa": 100.0,
+      "maximum_pressure_kPa": 700.0,
+      "optimal_pressure_kPa": 200.0,
+      "static_maximum_kPa": 800.0,
+      "notes": "La presión mínima de servicio es 10 mca (metros de columna de agua); máxima estática 80 mca"
+    },
+    "velocities": {
+      "minimum_ms": 0.30,
+      "maximum_ms": 3.00,
+      "optimal_min_ms": 0.60,
+      "optimal_max_ms": 1.50,
+      "units": "m/s"
+    },
+    "pipes": {
+      "materials": {
+        "PVC": {
+          "standard": "NTE INEN 1373",
+          "pressure_classes": ["6", "8", "10", "12.5", "16"],
+          "hazen_williams_C": 150,
+          "valid_diameters_mm": [50, 63, 75, 90, 110, 140, 160, 200, 250, 315, 400, 500, 630],
+          "roughness_mm": 0.0015,
+          "notes": "Clorhidrato de polivinilo no plastificado"
+        },
+        "HDPE": {
+          "standard": "NTE INEN 1374",
+          "pressure_classes": ["PE80", "PE100"],
+          "hazen_williams_C": 150,
+          "valid_diameters_mm": [50, 63, 75, 90, 110, 125, 140, 160, 200, 250, 315, 400, 500, 630, 800, 1000],
+          "roughness_mm": 0.0015,
+          "notes": "Polietileno de alta densidad, preferido para cruces y áreas de alto riesgo sísmico"
+        },
+        "DCI": {
+          "standard": "ISO 2531",
+          "pressure_classes": ["PN10", "PN16", "PN25", "PN40"],
+          "hazen_williams_C": 130,
+          "valid_diameters_mm": [80, 100, 125, 150, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000],
+          "roughness_mm": 0.1,
+          "notes": "Hierro dúctil centrifugado para líneas de transmisión y zonas de alta presión"
+        },
+        "STEEL": {
+          "standard": "AWWA C200",
+          "hazen_williams_C": 120,
+          "valid_diameters_mm": [100, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1400, 1600],
+          "roughness_mm": 0.046,
+          "notes": "Acero soldado para líneas de transmisión de gran diámetro"
+        }
+      },
+      "minimumDiameter": {
+        "residential_mm": 75,
+        "commercial_mm": 100,
+        "industrial_mm": 150,
+        "transmission_mm": 200,
+        "fire_fighting_mm": 100,
+        "notes": "Diámetros mínimos según uso y zona de servicio"
+      },
+      "coverDepths": {
+        "pedestrian_zones": {
+          "minimum_m": 0.80,
+          "recommended_m": 1.00
+        },
+        "vehicle_zones": {
+          "minimum_m": 1.00,
+          "recommended_m": 1.20,
+          "heavy_traffic_m": 1.50
+        },
+        "agricultural_zones": {
+          "minimum_m": 1.20,
+          "recommended_m": 1.50
+        },
+        "rocky_terrain": {
+          "minimum_m": 0.60,
+          "notes": "Con protección adicional de concreto o colchón de arena"
+        }
+      },
+      "bedding": {
+        "trench_width_formula": "Diámetro externo + 0.40 m mínimo, hasta Di <= 600mm; Di + 0.60 m para Di > 600mm",
+        "sand_cushion_mm": 100,
+        "sand_surround_mm": 150,
+        "compaction_percent": 95
+      }
+    },
+    "valves": {
+      "isolation_spacing_m": 400,
+      "air_release_spacing_m": 500,
+      "drain_valve_spacing_m": 600,
+      "check_valve_required_slope_percent": 10,
+      "pressure_reducing_valve": {
+        "trigger_pressure_kPa": 700,
+        "setpoint_kPa": 350
+      }
+    },
+    "hydrants": {
+      "spacing_residential_m": 150,
+      "spacing_commercial_m": 100,
+      "spacing_industrial_m": 100,
+      "minimum_flow_lps": 10,
+      "working_pressure_kPa": 140
+    }
+  },
+
+  "sewerage": {
+    "description": "Especificaciones para redes de alcantarillado sanitario",
+    "design": {
+      "peaking_factor_residential": 3.5,
+      "infiltration_lps_km_mm": 0.001,
+      "minimum_self_cleaning_velocity_ms": 0.60,
+      "maximum_velocity_ms": 5.00,
+      "maximum_velocity_abrasive_ms": 3.00,
+      "manning_n_concrete": 0.013,
+      "manning_n_pvc": 0.011,
+      "flow_depth_ratio_max": 0.75,
+      "full_flow_capacity_factor": 0.85
+    },
+    "pipes": {
+      "materials": {
+        "PVC_SN4": {
+          "standard": "NTE INEN 3054",
+          "stiffness_class": "SN4",
+          "valid_diameters_mm": [160, 200, 250, 315, 400, 500, 630],
+          "manning_n": 0.011,
+          "maximum_cover_m": 4.0,
+          "minimum_cover_m": 1.00
+        },
+        "PVC_SN8": {
+          "standard": "NTE INEN 3054",
+          "stiffness_class": "SN8",
+          "valid_diameters_mm": [200, 250, 315, 400, 500, 630, 800],
+          "manning_n": 0.011,
+          "maximum_cover_m": 6.0,
+          "minimum_cover_m": 1.00
+        },
+        "CONCRETE_VITRIFIED": {
+          "standard": "ASTM C76",
+          "valid_diameters_mm": [200, 250, 300, 375, 450, 525, 600, 750, 900, 1050, 1200, 1350, 1500],
+          "manning_n": 0.013,
+          "maximum_cover_m": 10.0
+        },
+        "HDPE_CORRUGATED": {
+          "standard": "ASTM F2648",
+          "valid_diameters_mm": [300, 375, 450, 525, 600, 750, 900, 1050, 1200, 1500],
+          "manning_n": 0.012,
+          "maximum_cover_m": 8.0
+        },
+        "GRP": {
+          "standard": "ASTM D3262",
+          "valid_diameters_mm": [300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1400, 1600, 1800, 2000],
+          "manning_n": 0.010,
+          "maximum_cover_m": 12.0,
+          "notes": "Fibra de vidrio reforzada con resina de poliéster, para grandes colectores"
+        }
+      },
+      "minimumDiameter": {
+        "lateral_connections_mm": 160,
+        "lateral_collectors_mm": 200,
+        "secondary_collectors_mm": 250,
+        "primary_collectors_mm": 400,
+        "interceptors_mm": 600,
+        "notes": "Diámetros mínimos según jerarquía de la red"
+      },
+      "slopes": {
+        "description": "Pendientes mínimas y máximas para tuberías de alcantarillado por diámetro",
+        "minimumSlopes": {
+          "D200_mm": { "min_percent": 0.40, "recommended_percent": 0.50, "notes": "Pendiente mínima para 200mm" },
+          "D250_mm": { "min_percent": 0.30, "recommended_percent": 0.40 },
+          "D300_mm": { "min_percent": 0.25, "recommended_percent": 0.30 },
+          "D350_mm": { "min_percent": 0.20, "recommended_percent": 0.25 },
+          "D400_mm": { "min_percent": 0.18, "recommended_percent": 0.22 },
+          "D450_mm": { "min_percent": 0.15, "recommended_percent": 0.18 },
+          "D500_mm": { "min_percent": 0.12, "recommended_percent": 0.15 },
+          "D600_mm": { "min_percent": 0.10, "recommended_percent": 0.12 },
+          "D700_mm": { "min_percent": 0.08, "recommended_percent": 0.10 },
+          "D800_mm": { "min_percent": 0.07, "recommended_percent": 0.09 },
+          "D900_mm": { "min_percent": 0.06, "recommended_percent": 0.08 },
+          "D1000_mm": { "min_percent": 0.05, "recommended_percent": 0.07 },
+          "D1200_mm": { "min_percent": 0.04, "recommended_percent": 0.06 },
+          "D1500_mm": { "min_percent": 0.03, "recommended_percent": 0.05 }
+        },
+        "maximumSlopes": {
+          "default_percent": 15.00,
+          "with_energy_dissipator_percent": 30.00,
+          "absolute_maximum_percent": 50.00
+        },
+        "formula": "Pendiente mínima = (1/D^0.5) * K, donde K es factor de sitio"
+      },
+      "coverDepths": {
+        "minimum_under_pavement_m": 1.20,
+        "minimum_under_sidewalk_m": 0.80,
+        "minimum_under_unpaved_m": 1.00,
+        "maximum_m": 6.00,
+        "maximum_with_special_design_m": 10.00,
+        "minimum_crossing_water_pipes_m": 0.30
+      }
+    },
+    "manholes": {
+      "spacing": {
+        "maximum_straight_m": 120,
+        "maximum_straight_large_diameter_m": 200,
+        "at_changes_of_direction": true,
+        "at_changes_of_slope": true,
+        "at_changes_of_diameter": true,
+        "at_junctions": true
+      },
+      "dimensions": {
+        "internal_diameter_standard_mm": 1200,
+        "internal_diameter_deep_mm": 1500,
+        "internal_diameter_large_mm": 2000,
+        "depth_threshold_standard_m": 3.00,
+        "depth_threshold_large_m": 6.00,
+        "base_thickness_mm": 200,
+        "wall_thickness_mm": 150,
+        "cover_diameter_mm": 600,
+        "cover_load_class": "D400",
+        "benching_required": true,
+        "benching_height_percent_of_pipe_diameter": 75
+      },
+      "drop_connections": {
+        "required_when_inlet_above_invert_m": 0.60,
+        "type": "outside_drop_connection"
+      }
+    },
+    "lateral_connections": {
+      "angle_degrees": 45,
+      "minimum_separation_mm": 3000,
+      "minimum_diameter_mm": 160,
+      "inspection_chamber_required": true
+    }
+  },
+
+  "stormwater": {
+    "description": "Especificaciones para redes de alcantarillado pluvial",
+    "design": {
+      "return_period_years": {
+        "residential_low_density": 2,
+        "residential_high_density": 5,
+        "commercial": 5,
+        "industrial": 10,
+        "arterial_roads": 10,
+        "expressways": 25,
+        "major_structures": 50
+      },
+      "time_of_concentration_min": 5,
+      "rational_method_coefficient_residential": 0.65,
+      "rational_method_coefficient_commercial": 0.85,
+      "rational_method_coefficient_industrial": 0.75,
+      "rational_method_coefficient_green": 0.25,
+      "manning_n_concrete": 0.013,
+      "manning_n_grass_channel": 0.030,
+      "minimum_velocity_ms": 0.90,
+      "maximum_velocity_concrete_ms": 5.00,
+      "maximum_velocity_unlined_earth_ms": 2.00
+    },
+    "pipes": {
+      "minimumDiameter_mm": 300,
+      "minimum_slope_D300_percent": 0.30,
+      "minimum_slope_D400_percent": 0.20,
+      "minimum_slope_D500_percent": 0.15
+    },
+    "inlets": {
+      "curb_inlet_spacing_m": 30,
+      "grate_inlet_spacing_m": 60,
+      "efficiency_factor_curb": 0.85,
+      "efficiency_factor_grate": 0.80
+    }
+  },
+
+  "separations": {
+    "description": "Distancias mínimas de separación entre redes",
+    "water_to_sewer_horizontal_m": 3.00,
+    "water_to_sewer_vertical_m": 0.30,
+    "water_to_gas_horizontal_m": 0.60,
+    "water_to_electrical_horizontal_m": 0.60,
+    "water_to_telecom_horizontal_m": 0.30,
+    "sewer_to_gas_horizontal_m": 0.60,
+    "sewer_to_electrical_horizontal_m": 0.60,
+    "sewer_to_telecom_horizontal_m": 0.30,
+    "water_to_building_foundation_m": 1.50,
+    "sewer_to_building_foundation_m": 3.00,
+    "notes": "Cuando se cruzan, el agua potable SIEMPRE debe ir por encima del alcantarillado"
+  },
+
+  "trenchExcavation": {
+    "minimum_trench_width_formula": "max(D_ext + 0.40, 0.80) metros para tuberías <= 600mm",
+    "shoring_required_depth_m": 1.20,
+    "dewatering": {
+      "required_when_groundwater_above_pipe": true,
+      "pump_standby_required": true
+    },
+    "backfill": {
+      "material": "Material selecto libre de piedras mayores a 50mm",
+      "compaction_near_pipe_percent": 90,
+      "compaction_upper_zone_percent": 95,
+      "compaction_under_pavement_percent": 98,
+      "layer_thickness_cm": 20
+    }
+  },
+
+  "testing": {
+    "pressure_test_water_supply": {
+      "test_pressure_factor": 1.5,
+      "minimum_test_pressure_kPa": 700,
+      "duration_hours": 2,
+      "allowable_leakage_formula": "L = N*D*P^0.5 / 7400 (litros/hora)"
+    },
+    "infiltration_test_sewerage": {
+      "maximum_infiltration_lph_km_mm": 0.50,
+      "method": "Low-pressure air test or water test"
+    },
+    "deflection_test_flexible_pipe": {
+      "maximum_deflection_percent": 5.0,
+      "test_delay_after_backfill_days": 30
+    }
+  }
+}

@@ -1,0 +1,53 @@
+# Build outputs
+bin/
+obj/
+dist/
+*.user
+*.suo
+.vs/
+*.cache
+
+# Test results
+TestResults/
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# SQLite databases generadas localmente
+*.civil3d.db
+
+# Logs
+*.log
+logs/
+
+# NuGet
+*.nupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Visual Studio
+*.rsuser
+*.opendb
+.vscode/
+*.VC.db
+
+# AutoCAD
+*.bak
+*.ac$
+
+# Temp
+*.tmp
+~$*

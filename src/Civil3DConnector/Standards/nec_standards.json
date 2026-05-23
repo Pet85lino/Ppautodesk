@@ -1,0 +1,78 @@
+{
+  "standard": "NEC-SE",
+  "fullName": "Norma Ecuatoriana de la Construcción - Estructuras",
+  "version": "2015",
+  "jurisdiction": "Ecuador",
+  "seismicZones": {
+    "description": "Zonificación sísmica Ecuador según NEC-SE-DS",
+    "zones": {
+      "I":   { "z": 0.15, "soilAmplification": "Fa", "description": "Baja sismicidad - Zonas de la costa norte" },
+      "II":  { "z": 0.25, "description": "Sismicidad moderada" },
+      "III": { "z": 0.30, "description": "Alta sismicidad" },
+      "IV":  { "z": 0.35, "description": "Alta sismicidad - Sierra ecuatoriana" },
+      "V":   { "z": 0.40, "description": "Muy alta sismicidad" },
+      "VI":  { "z": 0.50, "description": "Máxima sismicidad - Esmeraldas, Bahía" }
+    },
+    "majorCities": {
+      "Quito":      { "zone": "IV", "z": 0.40 },
+      "Guayaquil":  { "zone": "III", "z": 0.30 },
+      "Cuenca":     { "zone": "III", "z": 0.25 },
+      "Esmeraldas": { "zone": "VI", "z": 0.50 },
+      "Manta":      { "zone": "V",  "z": 0.40 },
+      "Ambato":     { "zone": "V",  "z": 0.40 },
+      "Loja":       { "zone": "III", "z": 0.30 },
+      "Ibarra":     { "zone": "IV", "z": 0.35 }
+    }
+  },
+  "soilTypes": {
+    "A": { "description": "Roca rígida, Vs > 1500 m/s", "Fa": 0.9,  "Fd": 0.9,  "Fs": 0.75 },
+    "B": { "description": "Roca media, 760 < Vs ≤ 1500 m/s", "Fa": 1.0, "Fd": 1.0, "Fs": 0.75 },
+    "C": { "description": "Suelos muy densos, 360 < Vs ≤ 760 m/s", "Fa": 1.4, "Fd": 1.3, "Fs": 1.3 },
+    "D": { "description": "Suelos rígidos, 180 < Vs ≤ 360 m/s", "Fa": 1.6, "Fd": 1.4, "Fs": 1.6 },
+    "E": { "description": "Suelos blandos, Vs < 180 m/s", "Fa": 1.8, "Fd": 1.7, "Fs": 2.4 },
+    "F": { "description": "Suelos especiales - requiere estudio", "Fa": "study", "Fd": "study", "Fs": "study" }
+  },
+  "foundations": {
+    "minimumDepthM": 0.6,
+    "minimumBearingCapacityKPa": 100,
+    "slopeStability": {
+      "minimumFactorOfSafety": 1.5,
+      "seismicFactorOfSafety": 1.1
+    }
+  },
+  "retainingWalls": {
+    "minimumSafetyFactors": {
+      "overturning": 2.0,
+      "sliding": 1.5,
+      "bearing": 3.0
+    },
+    "drainageSurcharge": 5.0
+  },
+  "pipelines": {
+    "trenchPipeLoadFactors": {
+      "Marston_Cd_flexible": 0.15,
+      "Marston_Cd_rigid": 0.30
+    },
+    "liveLoadSurcharge": {
+      "AASHTO_HS20_kN": 142,
+      "AASHTO_HS25_kN": 178
+    }
+  },
+  "slopes": {
+    "naturalSlopes": {
+      "maximumAngleDeg": 35,
+      "minimumFOS": 1.5
+    },
+    "cuttedSlopes": {
+      "rock": "0.25H:1V",
+      "hardSoil": "0.5H:1V",
+      "softSoil": "1H:1V",
+      "looseSoil": "1.5H:1V"
+    },
+    "fills": {
+      "maximumSlope": "1.5H:1V",
+      "minimumCompaction": 95,
+      "unit": "% Proctor Modificado"
+    }
+  }
+}

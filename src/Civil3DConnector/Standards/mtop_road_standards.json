@@ -1,0 +1,630 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MTOP Road Design Standards - Ecuador",
+  "description": "Normas de diseño geométrico de carreteras del Ministerio de Transporte y Obras Públicas del Ecuador (MTOP). Basado en la Norma Ecuatoriana Vial NEVI-12-MTOP.",
+  "version": "NEVI-12",
+  "authority": "MTOP - Ministerio de Transporte y Obras Públicas del Ecuador",
+  "lastUpdated": "2024-01-01",
+  "references": [
+    "NEVI-12-MTOP: Norma Ecuatoriana Vial, Volumen 2B - Diseño de Carreteras",
+    "AASHTO A Policy on Geometric Design of Highways and Streets (adaptado)",
+    "Manual de Capacidad de Carreteras HCM (adaptado MTOP)"
+  ],
+
+  "roadClassification": {
+    "description": "Clasificación funcional de carreteras en Ecuador",
+    "E": {
+      "name": "Autopista / Autovía",
+      "description": "Carreteras de acceso controlado, doble calzada, diseño de alta velocidad",
+      "function": "Movimiento de tráfico de larga distancia a alta velocidad",
+      "accessControl": "Control total de accesos",
+      "designSpeedRange_kph": [80, 120],
+      "annualAverageDailyTraffic_min": 8000
+    },
+    "R1": {
+      "name": "Carretera Primaria de dos carriles",
+      "description": "Red vial primaria, dos carriles, conexiones interprovinciales principales",
+      "function": "Conectividad interprovincial y regional",
+      "accessControl": "Acceso parcialmente controlado",
+      "designSpeedRange_kph": [60, 100],
+      "annualAverageDailyTraffic_range": [3000, 8000]
+    },
+    "R2": {
+      "name": "Carretera Secundaria",
+      "description": "Red vial secundaria, conexiones entre cantones",
+      "function": "Conectividad cantonal e intercantonal",
+      "designSpeedRange_kph": [40, 80],
+      "annualAverageDailyTraffic_range": [500, 3000]
+    },
+    "R3": {
+      "name": "Carretera Terciaria",
+      "description": "Red vial terciaria, caminos vecinales y rurales",
+      "function": "Acceso a zonas rurales y comunidades",
+      "designSpeedRange_kph": [20, 40],
+      "annualAverageDailyTraffic_max": 500
+    },
+    "U_A": {
+      "name": "Vía Arterial Urbana",
+      "description": "Vías de gran capacidad en zonas urbanas",
+      "designSpeedRange_kph": [50, 80]
+    },
+    "U_C": {
+      "name": "Vía Colectora Urbana",
+      "description": "Vías que distribuyen el tráfico hacia las arteriales",
+      "designSpeedRange_kph": [30, 50]
+    },
+    "U_L": {
+      "name": "Vía Local Urbana",
+      "description": "Calles de acceso a propiedades",
+      "designSpeedRange_kph": [20, 30]
+    }
+  },
+
+  "terrainTypes": {
+    "plano": {
+      "code": "P",
+      "description": "Pendiente transversal del terreno natural < 5%, longitudinal < 3%",
+      "maxLongitudinalGrade_percent": 3
+    },
+    "ondulado": {
+      "code": "O",
+      "description": "Pendiente transversal del terreno 5-25%, longitudinal 3-6%",
+      "maxLongitudinalGrade_percent": 6
+    },
+    "montanoso": {
+      "code": "M",
+      "description": "Pendiente transversal > 25%, longitudinal > 6%",
+      "maxLongitudinalGrade_percent": 12
+    },
+    "escarpado": {
+      "code": "E",
+      "description": "Pendiente transversal > 60%, terreno muy accidentado",
+      "maxLongitudinalGrade_percent": 15
+    }
+  },
+
+  "designParameters": {
+    "description": "Parámetros de diseño por clasificación y velocidad de diseño",
+
+    "designSpeed": {
+      "V120": {
+        "speed_kph": 120,
+        "applicableClasses": ["E"],
+        "terrain": ["P", "O"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 670,
+          "recommendedRadius_m": 900,
+          "minimumRadiusWithSuperelev_m": 450
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 160,
+            "crest_K_passing": 530,
+            "sag_K_stopping": 50,
+            "sag_K_passing": 50
+          }
+        },
+        "laneWidth_m": 3.65,
+        "shoulderWidth_paved_m": 3.00,
+        "shoulderWidth_unpaved_m": 1.50,
+        "maximumGrade_P_percent": 3.0,
+        "maximumGrade_O_percent": 4.0,
+        "maximumGrade_M_percent": 5.0,
+        "stoppingDistance_m": 285,
+        "passingDistance_m": 670,
+        "superelevationMax_percent": 8.0
+      },
+      "V110": {
+        "speed_kph": 110,
+        "applicableClasses": ["E", "R1"],
+        "terrain": ["P", "O"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 510,
+          "recommendedRadius_m": 700,
+          "minimumRadiusWithSuperelev_m": 350
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 110,
+            "sag_K_stopping": 40
+          }
+        },
+        "laneWidth_m": 3.65,
+        "shoulderWidth_paved_m": 2.50,
+        "shoulderWidth_unpaved_m": 1.20,
+        "maximumGrade_P_percent": 3.0,
+        "maximumGrade_O_percent": 4.0,
+        "maximumGrade_M_percent": 5.0,
+        "stoppingDistance_m": 240,
+        "superelevationMax_percent": 8.0
+      },
+      "V100": {
+        "speed_kph": 100,
+        "applicableClasses": ["E", "R1"],
+        "terrain": ["P", "O"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 395,
+          "recommendedRadius_m": 560,
+          "minimumRadiusWithSuperelev_m": 270
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 84,
+            "crest_K_passing": 275,
+            "sag_K_stopping": 30
+          }
+        },
+        "laneWidth_m": 3.65,
+        "shoulderWidth_paved_m": 2.00,
+        "shoulderWidth_unpaved_m": 1.00,
+        "maximumGrade_P_percent": 3.0,
+        "maximumGrade_O_percent": 4.0,
+        "maximumGrade_M_percent": 6.0,
+        "stoppingDistance_m": 185,
+        "passingDistance_m": 485,
+        "superelevationMax_percent": 8.0
+      },
+      "V90": {
+        "speed_kph": 90,
+        "applicableClasses": ["R1"],
+        "terrain": ["P", "O", "M"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 275,
+          "recommendedRadius_m": 420,
+          "minimumRadiusWithSuperelev_m": 195
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 52,
+            "crest_K_passing": 174,
+            "sag_K_stopping": 25
+          }
+        },
+        "laneWidth_m": 3.65,
+        "shoulderWidth_paved_m": 1.80,
+        "shoulderWidth_unpaved_m": 1.00,
+        "maximumGrade_P_percent": 3.0,
+        "maximumGrade_O_percent": 5.0,
+        "maximumGrade_M_percent": 7.0,
+        "stoppingDistance_m": 160,
+        "passingDistance_m": 415,
+        "superelevationMax_percent": 8.0
+      },
+      "V80": {
+        "speed_kph": 80,
+        "applicableClasses": ["R1", "R2"],
+        "terrain": ["P", "O", "M"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 180,
+          "recommendedRadius_m": 290,
+          "minimumRadiusWithSuperelev_m": 130
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 30,
+            "crest_K_passing": 96,
+            "sag_K_stopping": 20
+          }
+        },
+        "laneWidth_m": 3.65,
+        "shoulderWidth_paved_m": 1.50,
+        "shoulderWidth_unpaved_m": 1.00,
+        "maximumGrade_P_percent": 4.0,
+        "maximumGrade_O_percent": 6.0,
+        "maximumGrade_M_percent": 8.0,
+        "stoppingDistance_m": 130,
+        "passingDistance_m": 350,
+        "superelevationMax_percent": 8.0
+      },
+      "V70": {
+        "speed_kph": 70,
+        "applicableClasses": ["R2", "U_A"],
+        "terrain": ["P", "O", "M"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 115,
+          "recommendedRadius_m": 195,
+          "minimumRadiusWithSuperelev_m": 85
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 19,
+            "sag_K_stopping": 14
+          }
+        },
+        "laneWidth_m": 3.50,
+        "shoulderWidth_paved_m": 1.20,
+        "shoulderWidth_unpaved_m": 0.80,
+        "maximumGrade_P_percent": 5.0,
+        "maximumGrade_O_percent": 7.0,
+        "maximumGrade_M_percent": 9.0,
+        "stoppingDistance_m": 100,
+        "passingDistance_m": 280,
+        "superelevationMax_percent": 8.0
+      },
+      "V60": {
+        "speed_kph": 60,
+        "applicableClasses": ["R2", "U_A", "U_C"],
+        "terrain": ["P", "O", "M"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 75,
+          "recommendedRadius_m": 130,
+          "minimumRadiusWithSuperelev_m": 55
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 11,
+            "sag_K_stopping": 11
+          }
+        },
+        "laneWidth_m": 3.50,
+        "shoulderWidth_paved_m": 1.00,
+        "shoulderWidth_unpaved_m": 0.60,
+        "maximumGrade_P_percent": 5.0,
+        "maximumGrade_O_percent": 7.0,
+        "maximumGrade_M_percent": 10.0,
+        "stoppingDistance_m": 75,
+        "superelevationMax_percent": 8.0
+      },
+      "V50": {
+        "speed_kph": 50,
+        "applicableClasses": ["R3", "U_C"],
+        "terrain": ["P", "O", "M", "E"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 45,
+          "recommendedRadius_m": 80,
+          "minimumRadiusWithSuperelev_m": 33
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 6.5,
+            "sag_K_stopping": 7.5
+          }
+        },
+        "laneWidth_m": 3.30,
+        "shoulderWidth_paved_m": 0.60,
+        "shoulderWidth_unpaved_m": 0.40,
+        "maximumGrade_P_percent": 6.0,
+        "maximumGrade_O_percent": 8.0,
+        "maximumGrade_M_percent": 11.0,
+        "maximumGrade_E_percent": 13.0,
+        "stoppingDistance_m": 55,
+        "superelevationMax_percent": 8.0
+      },
+      "V40": {
+        "speed_kph": 40,
+        "applicableClasses": ["R3", "U_L"],
+        "terrain": ["P", "O", "M", "E"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 25,
+          "recommendedRadius_m": 50,
+          "minimumRadiusWithSuperelev_m": 19
+        },
+        "verticalAlignment": {
+          "sag_crest_K_value": {
+            "crest_K_stopping": 3.5,
+            "sag_K_stopping": 5.5
+          }
+        },
+        "laneWidth_m": 3.00,
+        "shoulderWidth_paved_m": 0.50,
+        "shoulderWidth_unpaved_m": 0.30,
+        "maximumGrade_P_percent": 7.0,
+        "maximumGrade_O_percent": 9.0,
+        "maximumGrade_M_percent": 12.0,
+        "maximumGrade_E_percent": 14.0,
+        "stoppingDistance_m": 40,
+        "superelevationMax_percent": 8.0
+      },
+      "V30": {
+        "speed_kph": 30,
+        "applicableClasses": ["R3", "U_L"],
+        "terrain": ["O", "M", "E"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 15,
+          "recommendedRadius_m": 30,
+          "minimumRadiusWithSuperelev_m": 11
+        },
+        "laneWidth_m": 3.00,
+        "shoulderWidth_unpaved_m": 0.30,
+        "maximumGrade_M_percent": 14.0,
+        "maximumGrade_E_percent": 16.0,
+        "stoppingDistance_m": 25,
+        "superelevationMax_percent": 10.0
+      },
+      "V20": {
+        "speed_kph": 20,
+        "applicableClasses": ["R3"],
+        "terrain": ["E"],
+        "horizontalAlignment": {
+          "minimumRadius_m": 10,
+          "recommendedRadius_m": 20
+        },
+        "laneWidth_m": 3.00,
+        "shoulderWidth_unpaved_m": 0.30,
+        "maximumGrade_E_percent": 18.0,
+        "stoppingDistance_m": 15,
+        "superelevationMax_percent": 12.0
+      }
+    }
+  },
+
+  "crossSection": {
+    "description": "Elementos de la sección transversal según NEVI-12",
+    "laneWidth": {
+      "E_A_kph100_120": 3.65,
+      "R1_kph80_100": 3.65,
+      "R2_kph60_80": 3.50,
+      "R2_kph40_60": 3.30,
+      "R3_kph20_40": 3.00,
+      "urban_arterial": 3.50,
+      "urban_collector": 3.30,
+      "urban_local": 3.00,
+      "bicycle_lane_min": 1.20,
+      "bicycle_lane_preferred": 1.50
+    },
+    "medianWidth": {
+      "E_minimum_m": 1.80,
+      "E_recommended_m": 3.60,
+      "R1_minimum_m": 1.20,
+      "urban_minimum_m": 1.00
+    },
+    "shoulder": {
+      "paved_R1_R2_m": 1.50,
+      "paved_E_m": 3.00,
+      "unpaved_R3_m": 1.00,
+      "unpaved_R2_m": 1.00,
+      "notes": "El hombro debe soportar carga de vehículos detenidos"
+    },
+    "sidewalk": {
+      "urban_minimum_m": 1.50,
+      "urban_recommended_m": 2.00,
+      "urban_commercial_m": 3.00,
+      "notes": "Ancho libre de obstáculos"
+    },
+    "clearZone": {
+      "V120_m": 9.0,
+      "V100_m": 7.0,
+      "V80_m": 6.0,
+      "V60_m": 4.5,
+      "V50_m": 3.0,
+      "notes": "Zona libre de obstáculos a cada lado de la calzada"
+    },
+    "drainage": {
+      "roadside_ditch_depth_min_m": 0.40,
+      "roadside_ditch_width_min_m": 0.60,
+      "transverse_slope_min_percent": 2.0,
+      "transverse_slope_max_percent": 4.0,
+      "superelevation_runoff_min_percent": 0.5
+    }
+  },
+
+  "horizontalAlignment": {
+    "description": "Alineamiento horizontal: curvas circulares y de transición",
+    "circularCurves": {
+      "minimumRadii": {
+        "description": "Radios mínimos absolutos por velocidad de diseño (con emax=8%)",
+        "V20_m": 10,
+        "V30_m": 15,
+        "V40_m": 25,
+        "V50_m": 45,
+        "V60_m": 75,
+        "V70_m": 115,
+        "V80_m": 180,
+        "V90_m": 275,
+        "V100_m": 395,
+        "V110_m": 510,
+        "V120_m": 670
+      },
+      "desirableMinimumRadii": {
+        "description": "Radios mínimos deseables (mayor comodidad)",
+        "V20_m": 20,
+        "V30_m": 30,
+        "V40_m": 50,
+        "V50_m": 80,
+        "V60_m": 130,
+        "V70_m": 195,
+        "V80_m": 290,
+        "V90_m": 420,
+        "V100_m": 560,
+        "V110_m": 700,
+        "V120_m": 900
+      },
+      "minimumTangentLength_m": {
+        "V40": 30,
+        "V60": 50,
+        "V80": 70,
+        "V100": 100,
+        "V120": 120
+      }
+    },
+    "spiralTransitionCurves": {
+      "required": true,
+      "description": "Curvas de transición espiral (clothoid/Euler) requeridas cuando R < Rmin_deseable",
+      "minimumLength_formula": "Ls_min = 0.0214 * V^3 / (R * C), C = 0.5 para autopistas, 0.8 para carreteras",
+      "minimumLength_V40_m": 25,
+      "minimumLength_V60_m": 35,
+      "minimumLength_V80_m": 50,
+      "minimumLength_V100_m": 70,
+      "minimumLength_V120_m": 90
+    },
+    "deflectionAngles": {
+      "minimumCurve_degrees": 1.0,
+      "notes": "Para ángulos de deflexión < 1° se pueden usar tangentes"
+    }
+  },
+
+  "verticalAlignment": {
+    "description": "Alineamiento vertical: gradientes y curvas verticales",
+    "grades": {
+      "absolute_maximum_percent": 18.0,
+      "maximum_by_speed_and_terrain": {
+        "description": "Pendiente máxima [%] por velocidad y tipo de terreno",
+        "V20": { "P": 10, "O": 12, "M": 15, "E": 18 },
+        "V30": { "P": 9,  "O": 11, "M": 14, "E": 16 },
+        "V40": { "P": 7,  "O": 9,  "M": 12, "E": 14 },
+        "V50": { "P": 6,  "O": 8,  "M": 11, "E": 13 },
+        "V60": { "P": 5,  "O": 7,  "M": 10, "E": 12 },
+        "V70": { "P": 5,  "O": 7,  "M": 9,  "E": 11 },
+        "V80": { "P": 4,  "O": 6,  "M": 8,  "E": 10 },
+        "V90": { "P": 3,  "O": 5,  "M": 7,  "E": 9  },
+        "V100":{ "P": 3,  "O": 4,  "M": 6,  "E": 8  },
+        "V110":{ "P": 3,  "O": 4,  "M": 5,  "E": 7  },
+        "V120":{ "P": 3,  "O": 4,  "M": 5,  "E": 6  }
+      },
+      "minimum_grade_drainage_percent": 0.50,
+      "recommended_minimum_percent": 1.00
+    },
+    "verticalCurves": {
+      "minimumLength_general_m": 20,
+      "minimumLength_formula": "L = K * A, donde A es cambio de pendiente en % y K es factor",
+      "K_values": {
+        "description": "Valor K mínimo para visibilidad de parada",
+        "crest": {
+          "V20": 1, "V30": 2, "V40": 4, "V50": 7, "V60": 11,
+          "V70": 19, "V80": 30, "V90": 52, "V100": 84, "V110": 110, "V120": 160
+        },
+        "sag": {
+          "V20": 2, "V30": 4, "V40": 6, "V50": 8, "V60": 11,
+          "V70": 14, "V80": 20, "V90": 25, "V100": 30, "V110": 40, "V120": 50
+        }
+      }
+    }
+  },
+
+  "superelevation": {
+    "description": "Peralte de curvas horizontales",
+    "maxSuperelevation_percent": 8.0,
+    "maxSuperelevation_snow_ice_percent": 6.0,
+    "maxSuperelevation_urban_percent": 6.0,
+    "normalCrownSlope_percent": 2.0,
+    "minimumSuperelevation_percent": 2.0,
+    "superelevationTable": {
+      "description": "Peralte requerido [%] según radio [m] y velocidad [km/h] (emax=8%)",
+      "notes": "Interpolar entre valores. NC = pendiente normal de bombeo (2%)"
+    },
+    "runoffLength": {
+      "description": "Longitud de transición de peralte",
+      "formula": "Lr = (w * emax * n) / Δ%, donde Δ% es cambio de peralte por metro",
+      "maxRelativeSlopeChange_percent": {
+        "V20": 1.00, "V30": 0.80, "V40": 0.75, "V50": 0.70,
+        "V60": 0.65, "V70": 0.60, "V80": 0.55, "V90": 0.50,
+        "V100": 0.47, "V110": 0.45, "V120": 0.40
+      }
+    }
+  },
+
+  "sightDistance": {
+    "stopping": {
+      "description": "Distancia de visibilidad de parada mínima [m]",
+      "V20_m": 15, "V30_m": 25, "V40_m": 40, "V50_m": 55,
+      "V60_m": 75, "V70_m": 100, "V80_m": 130, "V90_m": 160,
+      "V100_m": 185, "V110_m": 240, "V120_m": 285
+    },
+    "passing": {
+      "description": "Distancia de visibilidad de adelantamiento mínima [m]",
+      "V40_m": 170, "V50_m": 215, "V60_m": 255, "V70_m": 280,
+      "V80_m": 350, "V90_m": 415, "V100_m": 485, "V110_m": 560, "V120_m": 670
+    },
+    "intersection": {
+      "description": "Triángulo de visibilidad en intersecciones",
+      "required_distance_m": 10,
+      "notes": "Basado en velocidad de acercamiento y tiempo de reacción"
+    }
+  },
+
+  "intersections": {
+    "at_grade": {
+      "minimumAngle_degrees": 60,
+      "preferred_angle_degrees": 90,
+      "cornerRadius_local_m": 6,
+      "cornerRadius_collector_m": 9,
+      "cornerRadius_arterial_m": 12,
+      "sight_distance_factor": 1.5
+    },
+    "channelization": {
+      "required_AADT_threshold": 2000,
+      "island_minimum_area_m2": 5
+    }
+  },
+
+  "pavementDesign": {
+    "description": "Parámetros de diseño de pavimento MTOP",
+    "designPeriod_years": {
+      "R3": 10,
+      "R2": 15,
+      "R1": 20,
+      "E": 20
+    },
+    "ESALs": {
+      "very_low": 50000,
+      "low": 500000,
+      "medium": 5000000,
+      "high": 50000000
+    },
+    "subgradeModulus_MPa": {
+      "very_poor_CBR5": 17,
+      "poor_CBR10": 34,
+      "fair_CBR20": 69,
+      "good_CBR30": 103,
+      "very_good_CBR50": 172
+    }
+  },
+
+  "earthworks": {
+    "cutSlopes": {
+      "rock_hv": "1:5 (V:H)",
+      "weatheredRock_hv": "1:1",
+      "stiffSoil_hv": "1:1",
+      "normalSoil_hv": "2:3",
+      "looseSoil_hv": "1:1",
+      "notes": "Pendientes de corte, requieren estudio geotécnico para alturas > 5m"
+    },
+    "fillSlopes": {
+      "rock_fill_hv": "1:5",
+      "gravel_sand_hv": "2:3",
+      "normal_soil_hv": "1:1.5",
+      "loose_soil_hv": "1:2",
+      "notes": "Pendientes de relleno. Compactación mínima al 95% Proctor Modificado"
+    },
+    "benching": {
+      "required_fill_height_m": 3.0,
+      "bench_width_m": 1.0
+    }
+  },
+
+  "drainage": {
+    "design_return_period": {
+      "R3_rural": 10,
+      "R2_rural": 25,
+      "R1_rural": 50,
+      "E": 100,
+      "urban": 10
+    },
+    "culverts": {
+      "minimum_diameter_mm": 600,
+      "minimum_cover_m": 0.60,
+      "inlet_protection": true
+    },
+    "roadside_ditches": {
+      "minimum_depth_m": 0.40,
+      "minimum_width_m": 0.60,
+      "slope_min_percent": 0.5,
+      "slope_max_percent": 30.0
+    }
+  },
+
+  "safetyDevices": {
+    "guardrail": {
+      "required_fill_height_m": 3.0,
+      "required_cut_slope": "1:1 or steeper",
+      "type_W_beam": "Semi-rígida tipo W",
+      "setback_from_edge_m": 0.60
+    },
+    "signage": {
+      "standard": "INEN 004",
+      "horizontal_markings": "NTE INEN 004",
+      "delineators_spacing_straight_m": 80,
+      "delineators_spacing_curve_m": 20
+    }
+  }
+}

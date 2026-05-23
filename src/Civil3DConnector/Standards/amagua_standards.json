@@ -1,0 +1,108 @@
+{
+  "standard": "EPMAPS-AMAGUA",
+  "fullName": "Normas de Diseño de Sistemas de Alcantarillado - EPMAPS Quito / Amagua",
+  "version": "2023",
+  "jurisdiction": "Distrito Metropolitano de Quito (DMQ)",
+  "gravitySewerNetwork": {
+    "minimumDiameter": {
+      "valuesMm": [200, 200, 250],
+      "context": ["residential", "commercial", "industrial"],
+      "note": "Diámetro mínimo absoluto 200mm para colectores principales"
+    },
+    "standardDiametersMm": [200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000, 1200, 1500],
+    "hydraulicVelocity": {
+      "minimumMs": 0.6,
+      "maximumMs": 5.0,
+      "selfCleansingMs": 0.9,
+      "maximumAllowableMs": 6.0,
+      "note": "Velocidad mínima de autolimpieza 0.9 m/s para caudal de diseño"
+    },
+    "minimumSlope": {
+      "byDiameter": {
+        "200": 0.004,
+        "250": 0.003,
+        "300": 0.0025,
+        "350": 0.002,
+        "400": 0.0015,
+        "500": 0.001,
+        "600": 0.0009,
+        "700": 0.0008,
+        "800": 0.0007,
+        ">=900": 0.0006
+      },
+      "unit": "m/m",
+      "note": "Pendientes mínimas para garantizar velocidad de autolimpieza"
+    },
+    "maximumSlopePct": 15.0,
+    "coverDepth": {
+      "minimumUnderRoadM": 1.2,
+      "minimumUnderSidewalkM": 0.8,
+      "minimumUnderGreenAreaM": 0.6,
+      "maximumM": 6.0,
+      "note": "Profundidades mínimas incluyen 0.3m de protección adicional por DMQ"
+    },
+    "maximumFlowDepthRatio": 0.75,
+    "manning": {
+      "PVC": 0.009,
+      "concrete": 0.013,
+      "HDPE": 0.011,
+      "vitrifiedClay": 0.012
+    },
+    "peaking_factor": {
+      "formula": "Babbit",
+      "minimum": 1.8,
+      "maximum": 4.0
+    }
+  },
+  "pressureNetwork": {
+    "workingPressureBar": {
+      "minimum": 1.0,
+      "maximum": 7.0,
+      "residualAtHydrant": 1.0
+    },
+    "velocityMs": {
+      "minimum": 0.3,
+      "maximum": 2.5,
+      "economic": 1.2
+    },
+    "standardDiametersMm": [25, 32, 40, 50, 63, 75, 90, 110, 125, 140, 160, 200, 250, 315, 400, 500],
+    "coverDepth": {
+      "minimumM": 0.8,
+      "underRoadM": 1.0,
+      "note": "Redes de agua potable, mínimo 0.8m de cobertura"
+    }
+  },
+  "manholes": {
+    "maximumSpacingM": {
+      "straightRun": 100,
+      "atChanges": 0,
+      "note": "Pozo en cada cambio de dirección, pendiente, diámetro o material"
+    },
+    "minimumDiameterMm": 1200,
+    "chimney": {
+      "standardDiameterMm": 600,
+      "maximumHeightM": 2.5
+    },
+    "baseDrop": {
+      "maximumDropM": 0.8,
+      "dropStructureRequiredAboveM": 0.8
+    }
+  },
+  "separationFromOtherNetworks": {
+    "fromWaterMainM": 0.5,
+    "fromGasLineM": 0.3,
+    "fromElectricCableM": 0.3,
+    "fromTelecomM": 0.2,
+    "verticalCrossingM": 0.2,
+    "note": "Separación libre mínima entre paramentos exteriores"
+  },
+  "designPeriodYears": 25,
+  "populationGrowthRate": 2.5,
+  "perCapitaFlowLiterPerPersonDay": {
+    "residential_low": 150,
+    "residential_medium": 200,
+    "residential_high": 250,
+    "commercial": 10,
+    "industrial": "variable"
+  }
+}

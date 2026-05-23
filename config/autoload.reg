@@ -1,0 +1,28 @@
+Windows Registry Editor Version 5.00
+
+; ══════════════════════════════════════════════════════════════════
+; Civil 3D Intelligent Connector - AutoLoad Registry Configuration
+; Run as Administrator. Registers the DLL for auto-loading.
+; Adjust the path to match your actual DLL output directory.
+; ══════════════════════════════════════════════════════════════════
+
+; ────── Civil 3D 2025 (AutoCAD 2025) ──────
+[HKEY_CURRENT_USER\Software\Autodesk\AutoCAD\R24.0\ACAD-8001:409\Applications\Civil3DConnector]
+"DESCRIPTION"="Civil 3D Intelligent Connector v2.0"
+"LOADCTRLS"=dword:00000002
+"LOADER"="C:\\Civil3DConnector\\bin\\Release_2025\\Civil3DConnector.dll"
+"MANAGED"=dword:00000001
+
+; ────── Civil 3D 2026 (AutoCAD 2026) ──────
+[HKEY_CURRENT_USER\Software\Autodesk\AutoCAD\R25.0\ACAD-8001:409\Applications\Civil3DConnector]
+"DESCRIPTION"="Civil 3D Intelligent Connector v2.0"
+"LOADCTRLS"=dword:00000002
+"LOADER"="C:\\Civil3DConnector\\bin\\Release_2026\\Civil3DConnector.dll"
+"MANAGED"=dword:00000001
+
+; ────── Civil 3D 2027 (AutoCAD 2027) ──────
+[HKEY_CURRENT_USER\Software\Autodesk\AutoCAD\R26.0\ACAD-8001:409\Applications\Civil3DConnector]
+"DESCRIPTION"="Civil 3D Intelligent Connector v2.0"
+"LOADCTRLS"=dword:00000002
+"LOADER"="C:\\Civil3DConnector\\bin\\Release_2027\\Civil3DConnector.dll"
+"MANAGED"=dword:00000001
