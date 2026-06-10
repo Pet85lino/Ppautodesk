@@ -138,6 +138,11 @@ Suite tecnica multiplataforma de diagnostico para auriculares Bluetooth TWS
 
 ## Instalacion y uso
 
+> Tutorial completo paso a paso: [docs/getting_started.md](docs/getting_started.md)
+>
+> Nota: es una **aplicacion de escritorio** (se abre como ventana).
+> No es un servidor web: no usa ningun puerto.
+
 ```bash
 pip install -r requirements.txt
 python main.py
