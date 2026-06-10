@@ -1,6 +1,6 @@
 {
     "app_name": "LINO Audio Diagnostic",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "scan": {
         "duration_seconds": 4.0,
         "auto_refresh_ms": 5000

@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from audio import audio_test, latency_test
+from audio import audio_test, latency_test, mic_profile
 from ble.ble_scanner import DeviceInfo
 from core.app_manager import AppManager
 from core.config_manager import PROJECT_ROOT
@@ -277,16 +277,25 @@ class MainWindow(QMainWindow):
         device_layout.addWidget(device_label)
 
         self._output_combo = QComboBox()
-        self._output_combo.setMinimumWidth(320)
+        self._output_combo.setMinimumWidth(260)
         device_layout.addWidget(self._output_combo, stretch=1)
 
+        mic_label = QLabel("Microfono:")
+        mic_label.setObjectName("sectionTitle")
+        device_layout.addWidget(mic_label)
+
+        self._input_combo = QComboBox()
+        self._input_combo.setMinimumWidth(260)
+        device_layout.addWidget(self._input_combo, stretch=1)
+
         refresh_btn = QPushButton("Actualizar")
-        refresh_btn.clicked.connect(self._refresh_output_devices)
+        refresh_btn.clicked.connect(self._refresh_audio_devices)
         device_layout.addWidget(refresh_btn)
         layout.addWidget(device_panel)
 
-        self._refresh_output_devices()
+        self._refresh_audio_devices()
         self._output_combo.currentIndexChanged.connect(self._on_output_changed)
+        self._input_combo.currentIndexChanged.connect(self._on_input_changed)
 
         # --- Botonera de tests ---
         panel = GlassPanel()
@@ -320,6 +329,7 @@ class MainWindow(QMainWindow):
             ("Latencia", self._test_latency),
             ("Jitter (5x)", self._test_jitter),
             ("Sync L/R", self._test_stereo_sync),
+            ("Perfil de mic", self._test_mic_profile),
         ]
         for i, (label, func) in enumerate(tests):
             btn = QPushButton(label)
@@ -677,8 +687,8 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Audio: seleccion de salida
     # ==================================================================
-    def _refresh_output_devices(self) -> None:
-        """Rellena el combo SOLO con dispositivos de salida."""
+    def _refresh_audio_devices(self) -> None:
+        """Rellena los combos: solo salidas en uno, solo entradas en otro."""
         self._output_combo.blockSignals(True)
         self._output_combo.clear()
         self._output_combo.addItem("(Salida por defecto del sistema)", None)
@@ -688,6 +698,15 @@ class MainWindow(QMainWindow):
             )
         self._output_combo.blockSignals(False)
 
+        self._input_combo.blockSignals(True)
+        self._input_combo.clear()
+        self._input_combo.addItem("(Entrada por defecto del sistema)", None)
+        for dev in mic_profile.list_input_devices():
+            self._input_combo.addItem(
+                f"[{dev['index']}] {dev['name']} ({dev['inputs']} ch)", dev["index"]
+            )
+        self._input_combo.blockSignals(False)
+
     def _on_output_changed(self) -> None:
         index = self._output_combo.currentData()
         if audio_test.set_output_device(index):
@@ -696,6 +715,15 @@ class MainWindow(QMainWindow):
             )
         else:
             self.statusBar().showMessage("Dispositivo de salida invalido")
+
+    def _on_input_changed(self) -> None:
+        index = self._input_combo.currentData()
+        if mic_profile.set_input_device(index):
+            self.statusBar().showMessage(
+                f"Microfono: {self._input_combo.currentText()}"
+            )
+        else:
+            self.statusBar().showMessage("Microfono invalido")
 
     # ==================================================================
     # Audio: tests (cada funcion devuelve un texto de resultado)
@@ -770,6 +798,22 @@ class MainWindow(QMainWindow):
             f"Jitter: media {result.mean_ms:.1f} ms, sigma {result.std_ms:.1f} ms "
             f"({result.valid_runs}/{result.runs} validas, {result.classification})"
         )
+
+    def _test_mic_profile(self) -> str:
+        """Perfil del microfono uplink. Mantener ruido ambiente constante
+        (ventilador o ruido por parlantes) durante los 4 s de captura."""
+        chipset = None
+        mac = self.app.state.selected_mac
+        if mac:
+            caps = self.app.database.get_fingerprint(mac)
+            if caps:
+                from ble.firmware_profiler import profile_from_fingerprint
+
+                chipset = profile_from_fingerprint(caps).get("probable_chipset")
+        profile = mic_profile.microphone_profile(probable_chipset=chipset)
+        if profile is None:
+            return "Perfil de mic: entrada de audio no disponible"
+        return mic_profile.format_mic_profile(profile)
 
     def _test_stereo_sync(self) -> str:
         result = latency_test.stereo_sync_test()

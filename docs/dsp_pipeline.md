@@ -40,6 +40,23 @@ comparativo entre auriculares/codecs, no absoluto.
 * Uso tipico: ruido rosa o sweep por los auriculares + captura de mic
   -> respuesta en frecuencia real aproximada.
 
+## Perfil de microfono (`audio/mic_profile.py`)
+
+Caracteriza el uplink del TWS (no el hardware fisico — eso requiere
+teardown). Procedimiento: ruido ambiente CONSTANTE durante la captura.
+
+| Medicion          | Metodo                                            |
+|-------------------|---------------------------------------------------|
+| Topologia         | canales de entrada expuestos por el SO (1 = mono uplink, NO implica 1 mic fisico) |
+| ENC               | piso de ruido inicial vs estable; caida >= 6 dB = DSP adaptando |
+| Sensibilidad      | RMS de la captura en dBFS                         |
+| Claridad de voz   | % de energia en 300-3400 Hz (banda HFP)           |
+| Hardware estimado | heuristica chipset -> topologia tipica (Qualcomm dual ENC, Airoha dual, Realtek mono...) |
+
+La confianza del perfil es explicita (max 0.85): el numero fisico de
+MEMS, el modelo del capsulado y el cableado interno NO son medibles
+via Bluetooth, y el USB-C del case solo entrega energia.
+
 ## Proteccion auditiva (`audio/audio_test.py`)
 
 Limites DUROS aplicados a toda reproduccion: amplitud max 0.6,

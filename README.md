@@ -3,7 +3,23 @@
 Suite tecnica multiplataforma de diagnostico para auriculares Bluetooth TWS
 (True Wireless Stereo): Maxell, JBL, Xiaomi, Samsung, Sony y genericos.
 
-## Version actual: V1.4 (0.5.0)
+## Version actual: V1.5 (0.6.0)
+
+### Novedades V1.5 (Microphone Profiler)
+- **Perfil de microfono uplink** (`audio/mic_profile.py`):
+  - canales de entrada expuestos -> topologia (mono/dual/array), con la
+    advertencia honesta de que 1 canal expuesto != 1 mic fisico
+  - deteccion ENC por convergencia del piso de ruido (>= 6 dB = Detected)
+  - sensibilidad aparente (dBFS) y claridad de voz (% energia 300-3400 Hz)
+  - hardware estimado cruzando con el chipset del fingerprint BLE
+    (Qualcomm dual ENC, Airoha dual, Realtek mono, Apple array...)
+  - confianza explicita (max 0.85: sin teardown no hay certeza)
+- Selector de microfono en la pagina Audio + boton "Perfil de mic"
+  que genera el reporte `=== MICROPHONE PROFILE ===`
+
+---
+
+### Historial V1.4 (0.5.0)
 
 ### Novedades V1.4 (robustez y validacion)
 - **Estrategia de timeouts BLE**: reconexion con backoff exponencial
