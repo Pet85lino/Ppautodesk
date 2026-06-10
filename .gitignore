@@ -7,6 +7,8 @@ venv/
 # Datos locales generados por la app
 *.db
 logs/*.log*
+logs/*.png
+exports/
 
 # IDEs
 .idea/

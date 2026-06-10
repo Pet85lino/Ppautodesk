@@ -64,6 +64,34 @@ class DatabaseManagerTest(unittest.TestCase):
         # No debe lanzar excepcion; verificacion minima de persistencia.
         self.db.save_log("INFO", "evento de prueba")
 
+    def test_power_and_latency_history(self) -> None:
+        self.db.save_power(85.0, True)
+        self.db.save_power(None, True)  # sin sensor: debe ignorarse
+        self.db.save_latency(
+            120.5, jitter_ms=4.2, confidence=0.9,
+            channel="both", classification="Buena",
+        )
+        columns, rows = self.db._dump_table("power_history")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("percent", columns)
+        _, lat_rows = self.db._dump_table("latency_history")
+        self.assertEqual(len(lat_rows), 1)
+
+    def test_export_json_and_csv(self) -> None:
+        self.db.save_battery("AA:BB:CC:DD:EE:01", 70)
+        out_dir = Path(self._tmp.name) / "exports"
+
+        json_path = self.db.export_json(out_dir)
+        self.assertIsNotNone(json_path)
+        import json
+
+        with open(json_path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        self.assertEqual(len(payload["tables"]["battery_history"]), 1)
+
+        csv_paths = self.db.export_csv(out_dir)
+        self.assertEqual(len(csv_paths), 6)  # una por tabla
+
 
 class ConfigTest(unittest.TestCase):
     def test_defaults_when_file_missing(self) -> None:

@@ -4,24 +4,30 @@ ui/dashboard.py
 Ventana principal de LINO Audio Diagnostic.
 
 Secciones (panel lateral):
-    * Dashboard -> escaneo BLE, tabla de dispositivos, bateria.
-    * Audio     -> tonos de prueba L/R y test de latencia (MVP).
-    * Energia   -> estado de carga USB/AC del equipo (psutil).
+    * Dashboard -> escaneo BLE, tabla de dispositivos, bateria, export.
+    * Audio     -> seleccion de salida, tonos, ruido, sweep, RMS,
+                   latencia, jitter y sincronizacion L/R.
+    * Energia   -> estado de carga del equipo, medidores USB detectados,
+                   historial energetico con alertas.
     * Logs      -> consola tecnica en vivo.
 
 La ventana solo consume la API publica de AppManager (senales del motor
 BLE + base de datos); no ejecuta operaciones Bluetooth directamente.
+Los tests de audio corren en hilos de trabajo y reportan via senales Qt.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QComboBox,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -37,23 +43,36 @@ from PySide6.QtWidgets import (
 from audio import audio_test, latency_test
 from ble.ble_scanner import DeviceInfo
 from core.app_manager import AppManager
+from core.config import PROJECT_ROOT
 from ui.themes import DARK_GLASS_QSS
 from ui.widgets import BatteryIndicator, GlassPanel, LogConsole, StatCard
-from usb.usb_monitor import format_power_status, get_power_status
+from usb.usb_monitor import PowerStatus, check_alerts, get_power_status, list_serial_ports
 
 logger = logging.getLogger("lino.ui.dashboard")
 
 NAV_SECTIONS = ["Dashboard", "Audio", "Energia", "Logs"]
+EXPORTS_DIR = PROJECT_ROOT / "exports"
+
+# Persistir energia cada N ticks de auto-refresh (5 s * 12 = 1 min).
+POWER_PERSIST_EVERY_TICKS = 12
 
 
 class MainWindow(QMainWindow):
     """Dashboard principal de la suite."""
+
+    # Senales emitidas desde hilos de trabajo de audio (entrega queued
+    # en el hilo principal: seguro para tocar widgets y SQLite).
+    audio_status = Signal(str)
+    latency_measured = Signal(object)  # dict con la medicion para SQLite
 
     def __init__(self, app: AppManager):
         super().__init__()
         self.app = app
         self._battery_levels: dict[str, int | None] = {}  # cache mac -> nivel
         self._devices: list[DeviceInfo] = []
+        self._last_power: PowerStatus | None = None
+        self._last_power_time = time.monotonic()
+        self._power_ticks = 0
 
         self.setWindowTitle(
             f"{app.config.get('app_name')} v{app.config.get('version')}"
@@ -132,7 +151,7 @@ class MainWindow(QMainWindow):
         self._nav_group.idClicked.connect(self._pages.setCurrentIndex)
 
         layout.addStretch()
-        version = QLabel(f"v{self.app.config.get('version')} - MVP")
+        version = QLabel(f"v{self.app.config.get('version')}")
         version.setObjectName("mutedText")
         layout.addWidget(version)
         return sidebar
@@ -165,6 +184,15 @@ class MainWindow(QMainWindow):
         section.setObjectName("sectionTitle")
         header_row.addWidget(section)
         header_row.addStretch()
+
+        export_json_btn = QPushButton("Exportar JSON")
+        export_json_btn.clicked.connect(self._on_export_json)
+        header_row.addWidget(export_json_btn)
+
+        export_csv_btn = QPushButton("Exportar CSV")
+        export_csv_btn.clicked.connect(self._on_export_csv)
+        header_row.addWidget(export_csv_btn)
+
         self._scan_button = QPushButton("Escanear ahora")
         self._scan_button.clicked.connect(self.app.ble_engine.request_scan)
         header_row.addWidget(self._scan_button)
@@ -206,11 +234,34 @@ class MainWindow(QMainWindow):
         return page
 
     def _build_audio_page(self) -> QWidget:
-        """Tests de audio: tonos por canal y latencia por loopback."""
+        """Tests de audio: salida seleccionable, senales y mediciones DSP."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
 
+        # --- Seleccion de dispositivo de salida ---
+        device_panel = GlassPanel()
+        device_layout = QHBoxLayout(device_panel)
+        device_layout.setContentsMargins(16, 12, 16, 12)
+
+        device_label = QLabel("Salida de audio:")
+        device_label.setObjectName("sectionTitle")
+        device_layout.addWidget(device_label)
+
+        self._output_combo = QComboBox()
+        self._output_combo.setMinimumWidth(320)
+        device_layout.addWidget(self._output_combo, stretch=1)
+
+        refresh_btn = QPushButton("Actualizar")
+        refresh_btn.clicked.connect(self._refresh_output_devices)
+        device_layout.addWidget(refresh_btn)
+        layout.addWidget(device_panel)
+
+        self._refresh_output_devices()
+        self._output_combo.currentIndexChanged.connect(self._on_output_changed)
+
+        # --- Botonera de tests ---
         panel = GlassPanel()
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(16, 16, 16, 16)
@@ -221,25 +272,39 @@ class MainWindow(QMainWindow):
         panel_layout.addWidget(title)
 
         hint = QLabel(
-            "Conecta los auriculares como salida de audio del sistema antes de "
-            "ejecutar los tests. Los resultados aparecen en la seccion Logs."
+            "Selecciona los auriculares como salida antes de ejecutar los "
+            "tests. Volumen y duracion estan limitados por proteccion "
+            "auditiva. Detalle completo en la seccion Logs."
         )
         hint.setObjectName("mutedText")
         hint.setWordWrap(True)
         panel_layout.addWidget(hint)
 
-        buttons = QHBoxLayout()
+        grid = QGridLayout()
+        grid.setSpacing(8)
         tests = [
-            ("Tono izquierdo", lambda: audio_test.play_test_tone(channel="left")),
-            ("Tono derecho", lambda: audio_test.play_test_tone(channel="right")),
-            ("Balance L/R", audio_test.balance_test),
-            ("Latencia", latency_test.estimate_latency),
+            ("Tono izquierdo", self._test_tone_left),
+            ("Tono derecho", self._test_tone_right),
+            ("Balance L/R", self._test_balance),
+            ("Ruido blanco", self._test_white_noise),
+            ("Ruido rosa", self._test_pink_noise),
+            ("Sweep 20Hz-20kHz", self._test_sweep),
+            ("RMS L/R", self._test_rms),
+            ("Latencia", self._test_latency),
+            ("Jitter (5x)", self._test_jitter),
+            ("Sync L/R", self._test_stereo_sync),
         ]
-        for label, func in tests:
+        for i, (label, func) in enumerate(tests):
             btn = QPushButton(label)
             btn.clicked.connect(lambda _=False, f=func: self._run_audio_test(f))
-            buttons.addWidget(btn)
-        panel_layout.addLayout(buttons)
+            grid.addWidget(btn, i // 5, i % 5)
+        panel_layout.addLayout(grid)
+
+        # --- Resultado del ultimo test ---
+        self._audio_result = QLabel("Sin mediciones todavia")
+        self._audio_result.setObjectName("sectionTitle")
+        self._audio_result.setWordWrap(True)
+        panel_layout.addWidget(self._audio_result)
 
         if not audio_test.audio_available():
             warning = QLabel("Subsistema de audio no disponible en este equipo.")
@@ -247,14 +312,15 @@ class MainWindow(QMainWindow):
             panel_layout.addWidget(warning)
 
         panel_layout.addStretch()
-        layout.addWidget(panel)
+        layout.addWidget(panel, stretch=1)
         return page
 
     def _build_power_page(self) -> QWidget:
-        """Estado energetico del equipo anfitrion (base del diagnostico USB)."""
+        """Energia del host + medidores USB detectados."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
 
         panel = GlassPanel()
         panel_layout = QVBoxLayout(panel)
@@ -267,9 +333,19 @@ class MainWindow(QMainWindow):
         self._power_label = QLabel("Consultando...")
         panel_layout.addWidget(self._power_label)
 
+        meters_title = QLabel("Medidores USB / puertos serie")
+        meters_title.setObjectName("sectionTitle")
+        panel_layout.addWidget(meters_title)
+
+        self._meters_label = QLabel("Buscando puertos serie...")
+        self._meters_label.setObjectName("mutedText")
+        self._meters_label.setWordWrap(True)
+        panel_layout.addWidget(self._meters_label)
+
         note = QLabel(
-            "V2: deteccion de carga USB del case y voltaje estimado con "
-            "medidores serie (pyserial)."
+            "El historial energetico se guarda en SQLite cada minuto. "
+            "V2: lectura de voltaje/corriente/mAh de medidores UM25C, "
+            "FNB58, TC66C y AT34."
         )
         note.setObjectName("mutedText")
         note.setWordWrap(True)
@@ -303,6 +379,10 @@ class MainWindow(QMainWindow):
         engine.device_connected.connect(self._on_device_connected)
         engine.engine_error.connect(self._on_engine_error)
 
+        # Resultados de tests de audio (desde hilos de trabajo).
+        self.audio_status.connect(self._on_audio_status)
+        self.latency_measured.connect(self._on_latency_measured)
+
     # ==================================================================
     # Logica de actualizacion
     # ==================================================================
@@ -335,8 +415,52 @@ class MainWindow(QMainWindow):
     def _on_auto_refresh(self) -> None:
         """Tick del temporizador: nuevo escaneo + estado de energia."""
         self.app.ble_engine.request_scan()
-        self._power_label.setText(format_power_status(get_power_status()))
+        self._update_power()
 
+    def _update_power(self) -> None:
+        """Refresca energia, evalua alertas y persiste cada minuto."""
+        now = time.monotonic()
+        status = get_power_status()
+        self._power_label.setText(status.format())
+
+        alerts = check_alerts(self._last_power, status, now - self._last_power_time)
+        for alert in alerts:
+            self.app.database.save_log("ALERTA", alert)
+            self.statusBar().showMessage(f"ALERTA energia: {alert}")
+
+        self._power_ticks += 1
+        if self._power_ticks % POWER_PERSIST_EVERY_TICKS == 1:  # primer tick y cada minuto
+            self.app.database.save_power(status.percent, status.plugged)
+
+        ports = list_serial_ports()
+        if ports:
+            self._meters_label.setText("\n".join(p.format() for p in ports))
+        else:
+            self._meters_label.setText("Sin puertos serie detectados")
+
+        self._last_power = status
+        self._last_power_time = now
+
+    # ==================================================================
+    # Exportaciones
+    # ==================================================================
+    def _on_export_json(self) -> None:
+        path = self.app.database.export_json(EXPORTS_DIR)
+        self.statusBar().showMessage(
+            f"Exportado: {path}" if path else "Error en exportacion JSON (ver Logs)"
+        )
+
+    def _on_export_csv(self) -> None:
+        paths = self.app.database.export_csv(EXPORTS_DIR)
+        self.statusBar().showMessage(
+            f"Exportados {len(paths)} CSV en {EXPORTS_DIR}"
+            if paths
+            else "Error en exportacion CSV (ver Logs)"
+        )
+
+    # ==================================================================
+    # Seleccion y bateria BLE
+    # ==================================================================
     def _selected_mac(self) -> str | None:
         row = self._table.currentRow()
         if 0 <= row < len(self._devices):
@@ -385,18 +509,140 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message)
 
     # ==================================================================
-    # Audio (en hilo aparte para no congelar la UI durante sd.wait)
+    # Audio: seleccion de salida
     # ==================================================================
+    def _refresh_output_devices(self) -> None:
+        """Rellena el combo SOLO con dispositivos de salida."""
+        self._output_combo.blockSignals(True)
+        self._output_combo.clear()
+        self._output_combo.addItem("(Salida por defecto del sistema)", None)
+        for dev in audio_test.list_output_devices():
+            self._output_combo.addItem(
+                f"[{dev['index']}] {dev['name']} ({dev['outputs']} ch)", dev["index"]
+            )
+        self._output_combo.blockSignals(False)
+
+    def _on_output_changed(self) -> None:
+        index = self._output_combo.currentData()
+        if audio_test.set_output_device(index):
+            self.statusBar().showMessage(
+                f"Salida de audio: {self._output_combo.currentText()}"
+            )
+        else:
+            self.statusBar().showMessage("Dispositivo de salida invalido")
+
+    # ==================================================================
+    # Audio: tests (cada funcion devuelve un texto de resultado)
+    # ==================================================================
+    def _test_tone_left(self) -> str:
+        ok = audio_test.play_test_tone(channel="left")
+        return "Tono izquierdo reproducido" if ok else "Fallo el tono izquierdo"
+
+    def _test_tone_right(self) -> str:
+        ok = audio_test.play_test_tone(channel="right")
+        return "Tono derecho reproducido" if ok else "Fallo el tono derecho"
+
+    def _test_balance(self) -> str:
+        ok = audio_test.balance_test()
+        return "Balance L/R completado" if ok else "Fallo el test de balance"
+
+    def _test_white_noise(self) -> str:
+        ok = audio_test.play_white_noise()
+        return "Ruido blanco reproducido" if ok else "Fallo el ruido blanco"
+
+    def _test_pink_noise(self) -> str:
+        ok = audio_test.play_pink_noise()
+        return "Ruido rosa reproducido" if ok else "Fallo el ruido rosa"
+
+    def _test_sweep(self) -> str:
+        ok = audio_test.play_sweep()
+        return "Sweep 20 Hz - 20 kHz completado" if ok else "Fallo el sweep"
+
+    def _test_rms(self) -> str:
+        result = audio_test.measure_rms_balance()
+        if result is None:
+            return "RMS L/R: medicion no disponible (revisar microfono)"
+        return (
+            f"RMS L={result['rms_left']:.4f}  R={result['rms_right']:.4f}  "
+            f"diferencia={result['diff_db']:+.1f} dB"
+        )
+
+    def _test_latency(self) -> str:
+        result = latency_test.measure_once()
+        if result is None:
+            return "Latencia: medicion no disponible"
+        if result.valid:
+            self.latency_measured.emit(
+                {
+                    "latency_ms": result.latency_ms,
+                    "jitter_ms": None,
+                    "confidence": result.confidence,
+                    "channel": result.channel,
+                    "classification": result.classification,
+                }
+            )
+        return (
+            f"Latencia: {result.latency_ms:.1f} ms ({result.classification}, "
+            f"confianza {result.confidence:.2f})"
+            + ("" if result.valid else " - DESCARTADA por baja confianza")
+        )
+
+    def _test_jitter(self) -> str:
+        result = latency_test.jitter_test(runs=5)
+        if result is None:
+            return "Jitter: medicion no disponible"
+        self.latency_measured.emit(
+            {
+                "latency_ms": result.mean_ms,
+                "jitter_ms": result.std_ms,
+                "confidence": None,
+                "channel": "both",
+                "classification": result.classification,
+            }
+        )
+        return (
+            f"Jitter: media {result.mean_ms:.1f} ms, sigma {result.std_ms:.1f} ms "
+            f"({result.valid_runs}/{result.runs} validas, {result.classification})"
+        )
+
+    def _test_stereo_sync(self) -> str:
+        result = latency_test.stereo_sync_test()
+        if result is None:
+            return "Sync L/R: medicion no disponible"
+        return (
+            f"Sync L/R: L={result['left_ms']:.1f} ms, R={result['right_ms']:.1f} ms, "
+            f"drift={result['drift_ms']:+.1f} ms"
+        )
+
     def _run_audio_test(self, func) -> None:
+        """Ejecuta un test en hilo aparte (sd.wait es bloqueante)."""
+
         def worker():
             try:
-                result = func()
-                logger.info("Test de audio finalizado: resultado=%s", result)
+                message = func()
             except Exception as exc:  # noqa: BLE001 - frontera de hilo
                 logger.error("Fallo en test de audio: %s", exc)
+                message = f"Fallo en test de audio: {exc}"
+            self.audio_status.emit(message)
 
         threading.Thread(target=worker, daemon=True).start()
-        self.statusBar().showMessage("Ejecutando test de audio... (ver Logs)")
+        self.statusBar().showMessage("Ejecutando test de audio...")
+
+    def _on_audio_status(self, message: str) -> None:
+        """Resultado de un test (entregado en el hilo principal)."""
+        self._audio_result.setText(message)
+        self.statusBar().showMessage(message)
+        logger.info("Test de audio: %s", message)
+
+    def _on_latency_measured(self, data: dict) -> None:
+        """Persiste mediciones de latencia/jitter (hilo principal)."""
+        self.app.database.save_latency(
+            latency_ms=data["latency_ms"],
+            jitter_ms=data["jitter_ms"],
+            confidence=data["confidence"],
+            channel=data["channel"],
+            classification=data["classification"],
+        )
 
     # ==================================================================
     # Cierre ordenado
