@@ -6,9 +6,11 @@ Pipeline automatico "Diagnosticar auriculares".
 Secuencia (cada paso reporta progreso y tolera fallos parciales):
     1. Snapshot BLE del ultimo escaneo (nombre, RSSI, fabricante, UUIDs).
     2. Bateria via GATT (con timeout: muchos TWS no la exponen).
-    3. Tests de audio en hilo de trabajo: RMS L/R, latencia, jitter.
-    4. Analitica historica (salud de bateria, estabilidad, RSSI).
-    5. Generacion del reporte tecnico (PDF/HTML) en exports/.
+    3. Tests de audio en hilo de trabajo: RMS L/R, latencia, jitter
+       y continuidad (deteccion de dropouts).
+    4. Analitica historica + Device Quality Score + perfil de firmware.
+    5. Reporte tecnico (PDF/HTML) y sesion completa en sessions/
+       (session.json, ble_log.json, waveform.wav, diagnostics.pdf).
 
 El runner vive en el hilo principal de Qt y orquesta trabajo asincrono
 (motor BLE) y bloqueante (audio, en threading.Thread) solo con senales.
@@ -21,10 +23,12 @@ import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from audio import audio_test, latency_test
-from core import analytics
+from audio import audio_test, dropout_test, latency_test
+from ble.firmware_profiler import profile_firmware
+from core import analytics, scoring
 from core.config_manager import PROJECT_ROOT
 from core.report_generator import generate_report
+from core.session_recorder import SessionRecorder
 
 logger = logging.getLogger("lino.core.diagnostics")
 
@@ -130,6 +134,13 @@ class DiagnosticRunner(QObject):
                         "std_ms": jitter.std_ms,
                         "classification": jitter.classification,
                     }
+                continuity = dropout_test.dropout_test(duration=4.0)
+                if continuity:
+                    results["continuity"] = {
+                        "dropouts": continuity.dropouts,
+                        "total_gap_ms": continuity.total_gap_ms,
+                        "continuity_pct": continuity.continuity_pct,
+                    }
             except Exception as exc:  # noqa: BLE001 - frontera de hilo
                 logger.error("Fase de audio del diagnostico fallo: %s", exc)
             self._audio_done.emit(results)
@@ -159,7 +170,7 @@ class DiagnosticRunner(QObject):
     # ------------------------------------------------------------------
     def _finish(self) -> None:
         mac = self._device.mac
-        self.progress.emit("[4/5] Calculando analitica historica...")
+        self.progress.emit("[4/5] Analitica, score y perfil de firmware...")
         try:
             self._report["analytics"] = analytics.full_report_data(
                 self._app.database, mac
@@ -168,9 +179,41 @@ class DiagnosticRunner(QObject):
             logger.error("Analitica del diagnostico fallo: %s", exc)
             self._report["analytics"] = {}
 
-        self.progress.emit("[5/5] Generando reporte tecnico...")
+        # Device Quality Score con los resultados frescos del pipeline.
+        extras: dict = {}
+        if self._report.get("rms"):
+            extras["rms_diff_db"] = self._report["rms"]["diff_db"]
+        if self._report.get("continuity"):
+            extras["continuity_pct"] = self._report["continuity"]["continuity_pct"]
+        try:
+            self._report["quality_score"] = scoring.device_quality_score(
+                self._app.database, mac, extras=extras
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Scoring fallo: %s", exc)
+
+        # Perfil de firmware desde la huella BLE conocida.
+        caps = self._report["analytics"].get("capabilities") or {}
+        self._report["firmware"] = profile_firmware(
+            self._device.manufacturer,
+            self._device.uuids or caps.get("uuids"),
+            caps.get("services"),
+        )
+
+        self.progress.emit("[5/5] Generando reporte y sesion...")
         path = generate_report(self._report, self._app.database, EXPORTS_DIR)
         self._report["report_path"] = str(path) if path else None
+
+        # Sesion completa: artefacto de laboratorio autocontenido.
+        try:
+            session = SessionRecorder(mac)
+            session.save_session_json(self._report)
+            session.save_ble_log(self._app.database, mac)
+            session.save_waveform(dropout_test.get_last_recording())
+            session.attach_report(path)
+            self._report["session_dir"] = str(session.session_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("No se pudo grabar la sesion: %s", exc)
 
         self._running = False
         logger.info("Diagnostico de %s completado (reporte: %s)", mac, path)

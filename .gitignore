@@ -9,6 +9,12 @@ venv/
 logs/*.log*
 logs/*.png
 exports/
+sessions/
+
+# Cobertura y cache de herramientas
+.coverage
+.pytest_cache/
+.ruff_cache/
 
 # IDEs
 .idea/

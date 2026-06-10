@@ -38,6 +38,7 @@ EXPORT_TABLES = (
     "latency_history",
     "device_capabilities",
     "ble_events",
+    "adv_timeline",
     "charge_history",
     "logs",
 )
@@ -101,6 +102,15 @@ CREATE TABLE IF NOT EXISTS ble_events (
     event_type TEXT NOT NULL,  -- disconnected | connect_failed | rssi_jump | out_of_range
     detail    TEXT,
     timestamp TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS adv_timeline (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    mac        TEXT NOT NULL,
+    t_ms       REAL,        -- offset dentro de la captura
+    rssi       INTEGER,
+    payload    TEXT,        -- manufacturer data en hex (JSON)
+    capture_ts TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS charge_history (
@@ -279,6 +289,35 @@ class DatabaseManager:
                 )
         except sqlite3.Error as exc:
             logger.error("Error guardando evento BLE: %s", exc)
+
+    def save_raw_log(self, raw_log: dict) -> int:
+        """Persiste una captura cruda de advertising (adv_timeline).
+
+        Returns:
+            Numero de muestras guardadas.
+        """
+        samples = raw_log.get("samples", [])
+        ts = _now()
+        try:
+            with self._conn:
+                self._conn.executemany(
+                    """INSERT INTO adv_timeline (mac, t_ms, rssi, payload, capture_ts)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            s["mac"],
+                            s.get("t_ms"),
+                            s.get("rssi"),
+                            json.dumps(s.get("manufacturer_data", {})),
+                            ts,
+                        )
+                        for s in samples
+                    ],
+                )
+            return len(samples)
+        except sqlite3.Error as exc:
+            logger.error("Error guardando raw log: %s", exc)
+            return 0
 
     def save_charge_sample(
         self,

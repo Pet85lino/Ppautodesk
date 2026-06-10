@@ -1,0 +1,55 @@
+[project]
+name = "lino-audio-diagnostic"
+version = "0.4.0"
+description = "Suite tecnica de diagnostico para auriculares Bluetooth TWS"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Pet85lino" }]
+dependencies = [
+    "bleak",
+    "PySide6",
+    "numpy",
+    "scipy",
+    "sounddevice",
+    "matplotlib",
+    "pyserial",
+    "psutil",
+    "pandas",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
+# ----------------------------------------------------------------------
+# Lint (ruff)
+# ----------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["logs", "exports", "sessions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # lineas largas: limitadas por revision, no por lint
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["audio", "ble", "core", "database", "ui", "usb"]
+
+# ----------------------------------------------------------------------
+# Tests (pytest)
+# ----------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["audio", "ble", "core", "database", "usb"]
+omit = ["*/__init__.py"]

@@ -158,6 +158,50 @@ def stability_score(db, mac: str) -> dict:
     return result
 
 
+def temperature_analytics(db, source: str | None = None) -> dict | None:
+    """Analitica termica de las sesiones de carga (medidores USB).
+
+    Temperaturas de carga altas o crecientes son el sintoma clasico de
+    una bateria danada o de un circuito de carga defectuoso.
+
+    Returns:
+        dict {samples, max_c, mean_c, overheat_events, trend_c} o None
+        si no hay datos de temperatura registrados.
+    """
+    query = "SELECT temp_c FROM charge_history WHERE temp_c IS NOT NULL"
+    params: tuple = ()
+    if source:
+        query += " AND source = ?"
+        params = (source,)
+    query += " ORDER BY id ASC LIMIT 5000"
+
+    try:
+        rows = db._conn.execute(query, params).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error leyendo temperaturas: %s", exc)
+        return None
+
+    temps = [r[0] for r in rows]
+    if len(temps) < 2:
+        return None
+
+    half = len(temps) // 2
+    trend = mean(temps[half:]) - mean(temps[:half])
+    result = {
+        "samples": len(temps),
+        "max_c": round(max(temps), 1),
+        "mean_c": round(mean(temps), 1),
+        "overheat_events": sum(1 for t in temps if t >= 45.0),
+        "trend_c": round(trend, 1),  # positivo = calentandose entre mitades
+    }
+    logger.info(
+        "Termica%s: max %.0f C, media %.0f C, sobrecalentamientos %d",
+        f" {source}" if source else "", result["max_c"],
+        result["mean_c"], result["overheat_events"],
+    )
+    return result
+
+
 def full_report_data(db, mac: str) -> dict:
     """Paquete completo de analitica para el generador de reportes."""
     return {
@@ -165,4 +209,5 @@ def full_report_data(db, mac: str) -> dict:
         "rssi": rssi_stats(db, mac),
         "stability": stability_score(db, mac),
         "capabilities": db.get_fingerprint(mac),
+        "temperature": temperature_analytics(db),
     }

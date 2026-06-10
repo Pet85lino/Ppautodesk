@@ -78,6 +78,7 @@ class BLEEngine(QThread):
     device_connected = Signal(str, bool)    # mac, exito
     fingerprint_ready = Signal(str, object) # mac, dict de capacidades
     ble_event = Signal(str, str, str)       # mac, tipo, detalle
+    raw_log_ready = Signal(object)          # dict: log crudo de advertising
     engine_error = Signal(str)              # mensaje legible
 
     def __init__(self, scan_duration: float = 4.0, connect_timeout: float = 10.0):
@@ -130,6 +131,14 @@ class BLEEngine(QThread):
     def request_fingerprint(self, mac: str) -> None:
         """Fingerprinting completo: servicios GATT, MTU, bateria, codecs."""
         self._submit(self._async_fingerprint(mac))
+
+    def request_raw_log(self, duration: float = 10.0) -> None:
+        """Raw BLE logger: captura cada advertisement individual durante
+        `duration` segundos (timeline RSSI, payloads, intervalos reales)."""
+        if self._scanning:
+            self.engine_error.emit("Escaneo en curso: reintenta el raw log")
+            return
+        self._submit(self._async_raw_log(duration))
 
     def session_avg_rssi(self, mac: str) -> float | None:
         """RSSI promedio observado en esta sesion (lectura simple,
@@ -272,6 +281,75 @@ class BLEEngine(QThread):
             self.device_connected.emit(mac, False)
             self.ble_event.emit(mac, "connect_failed", str(exc))
             self.engine_error.emit(f"Fingerprinting de {mac} fallo: {exc}")
+
+    async def _async_raw_log(self, duration: float) -> None:
+        """Captura cruda: un registro por advertisement recibido.
+
+        A diferencia de discover() (que entrega un snapshot), el callback
+        de deteccion ve CADA paquete, lo que permite medir intervalos de
+        advertising reales y detectar anomalias de emision.
+        """
+        import time as _time
+
+        self._scanning = True
+        samples: list[dict] = []
+        t0 = _time.monotonic()
+
+        def on_advert(device, adv):
+            samples.append(
+                {
+                    "t_ms": round((_time.monotonic() - t0) * 1000.0, 1),
+                    "mac": device.address,
+                    "name": device.name or "",
+                    "rssi": adv.rssi,
+                    "manufacturer_data": {
+                        f"0x{cid:04X}": data.hex()
+                        for cid, data in adv.manufacturer_data.items()
+                    },
+                    "uuids": list(adv.service_uuids or []),
+                }
+            )
+
+        try:
+            logger.info("Raw BLE log durante %.1f s...", duration)
+            scanner = BleakScanner(detection_callback=on_advert)
+            await scanner.start()
+            await asyncio.sleep(min(max(duration, 1.0), 60.0))
+            await scanner.stop()
+        except (BleakError, OSError) as exc:
+            logger.error("Raw BLE log fallo: %s", exc)
+            self.engine_error.emit(f"Raw BLE log fallo: {exc}")
+            self._scanning = False
+            return
+        finally:
+            self._scanning = False
+
+        # Intervalos de advertising por dispositivo (delta entre paquetes).
+        by_mac: dict[str, list[float]] = {}
+        for sample in samples:
+            by_mac.setdefault(sample["mac"], []).append(sample["t_ms"])
+        intervals = {}
+        for mac, times in by_mac.items():
+            deltas = [round(b - a, 1) for a, b in zip(times, times[1:])]
+            intervals[mac] = {
+                "packets": len(times),
+                "avg_interval_ms": round(sum(deltas) / len(deltas), 1) if deltas else None,
+                "min_interval_ms": min(deltas) if deltas else None,
+                "max_interval_ms": max(deltas) if deltas else None,
+            }
+
+        result = {
+            "duration_s": duration,
+            "total_packets": len(samples),
+            "devices": len(by_mac),
+            "intervals": intervals,
+            "samples": samples,
+        }
+        logger.info(
+            "Raw BLE log: %d paquetes de %d dispositivo(s)",
+            len(samples), len(by_mac),
+        )
+        self.raw_log_ready.emit(result)
 
     def _manufacturer_for(self, mac: str) -> str:
         """Fabricante del ultimo advertisement visto para esta MAC."""

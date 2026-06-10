@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections import deque
 
-from PySide6.QtCore import Qt, Signal, QObject, QPointF
+from PySide6.QtCore import QObject, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,

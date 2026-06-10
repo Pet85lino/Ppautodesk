@@ -3,7 +3,31 @@
 Suite tecnica multiplataforma de diagnostico para auriculares Bluetooth TWS
 (True Wireless Stereo): Maxell, JBL, Xiaomi, Samsung, Sony y genericos.
 
-## Version actual: V1.2 (0.3.0)
+## Version actual: V1.3 (0.4.0)
+
+### Novedades V1.3
+- **Continuidad de audio (packet loss)**: tono continuo + analisis de
+  envolvente -> dropouts, hueco total y % de continuidad
+- **Session recorder**: cada diagnostico genera `sessions/<ts>_<mac>/`
+  con session.json, ble_log.json, waveform.wav y diagnostics.pdf
+- **Device Quality Score**: estabilidad/bateria/latencia/audio 0-100 +
+  puntaje global ponderado
+- **Comparacion automatica**: dos TWS lado a lado o el mismo TWS en el
+  tiempo (tendencia de degradacion)
+- **Raw BLE logger**: cada advertisement individual con timeline RSSI,
+  payloads e intervalos de advertising reales -> tabla `adv_timeline`
+- **Analizador de espectro**: FFT + espectrograma (waterfall) de
+  capturas de microfono
+- **Analitica termica**: temperaturas de carga, sobrecalentamientos y
+  tendencia (con medidor USB)
+- **Perfilado de firmware**: chipset probable, ecosistema y servicios
+  propietarios desde la huella BLE (especulativo)
+- **Grabador de curvas de carga**: sondeo continuo del medidor USB con
+  alerta de sobrecalentamiento y grafica V/A/W/temp
+- **CI/CD**: GitHub Actions (ruff + pytest en Python 3.11/3.12) y
+  `pyproject.toml` centralizado
+- **Modo Laboratorio** en la UI: dropouts, espectro, raw BLE, score,
+  tendencia y comparacion A/B
 
 ### Bluetooth BLE
 - Escaneo BLE (`bleak`) con auto-refresh cada 5 segundos

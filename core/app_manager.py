@@ -61,6 +61,7 @@ class AppManager:
         self.ble_engine.battery_read.connect(self._on_battery_read)
         self.ble_engine.fingerprint_ready.connect(self._on_fingerprint)
         self.ble_engine.ble_event.connect(self._on_ble_event)
+        self.ble_engine.raw_log_ready.connect(self._on_raw_log)
         self.ble_engine.engine_error.connect(self._on_engine_error)
 
     # ------------------------------------------------------------------
@@ -109,6 +110,15 @@ class AppManager:
     def _on_ble_event(self, mac: str, event_type: str, detail: str) -> None:
         self.database.save_ble_event(mac, event_type, detail)
         self.bus.publish("ble.event", {"mac": mac, "type": event_type, "detail": detail})
+
+    def _on_raw_log(self, raw_log: dict) -> None:
+        saved = self.database.save_raw_log(raw_log)
+        self.database.save_log(
+            "INFO",
+            f"Raw BLE log: {raw_log.get('total_packets', 0)} paquetes "
+            f"({saved} persistidos) de {raw_log.get('devices', 0)} dispositivo(s)",
+        )
+        self.bus.publish("ble.raw_log", raw_log)
 
     def _on_engine_error(self, message: str) -> None:
         self.database.save_log("ERROR", message)

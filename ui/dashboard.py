@@ -51,7 +51,7 @@ from usb.usb_monitor import PowerStatus, check_alerts, get_power_status, list_se
 
 logger = logging.getLogger("lino.ui.dashboard")
 
-NAV_SECTIONS = ["Dashboard", "Audio", "Energia", "Logs"]
+NAV_SECTIONS = ["Dashboard", "Audio", "Energia", "Laboratorio", "Logs"]
 EXPORTS_DIR = PROJECT_ROOT / "exports"
 
 # Persistir energia cada N ticks de auto-refresh (5 s * 12 = 1 min).
@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
     # en el hilo principal: seguro para tocar widgets y SQLite).
     audio_status = Signal(str)
     latency_measured = Signal(object)  # dict con la medicion para SQLite
+    lab_status = Signal(str)           # resultados del modo laboratorio
 
     def __init__(self, app: AppManager):
         super().__init__()
@@ -113,6 +114,7 @@ class MainWindow(QMainWindow):
         self._pages.addWidget(self._build_dashboard_page())
         self._pages.addWidget(self._build_audio_page())
         self._pages.addWidget(self._build_power_page())
+        self._pages.addWidget(self._build_lab_page())
         self._pages.addWidget(self._build_logs_page())
 
         root_layout.addWidget(self._build_sidebar())
@@ -380,6 +382,68 @@ class MainWindow(QMainWindow):
         layout.addWidget(panel)
         return page
 
+    def _build_lab_page(self) -> QWidget:
+        """Modo laboratorio: dropouts, espectro, raw BLE, score y comparacion."""
+        from PySide6.QtWidgets import QPlainTextEdit
+
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        panel = GlassPanel()
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(16, 16, 16, 16)
+        panel_layout.setSpacing(10)
+
+        title = QLabel("Modo laboratorio")
+        title.setObjectName("sectionTitle")
+        panel_layout.addWidget(title)
+
+        # --- Fila 1: pruebas instrumentales ---
+        row1 = QHBoxLayout()
+        tools = [
+            ("Dropouts (5s)", self._lab_dropout),
+            ("Espectro (mic 3s)", self._lab_spectrum),
+            ("Raw BLE log (10s)", self._lab_raw_log),
+            ("Score dispositivo", self._lab_score),
+            ("Tendencia temporal", self._lab_trend),
+        ]
+        for label, handler in tools:
+            btn = QPushButton(label)
+            btn.clicked.connect(handler)
+            row1.addWidget(btn)
+        panel_layout.addLayout(row1)
+
+        # --- Fila 2: comparacion A/B ---
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Comparar:"))
+        self._cmp_combo_a = QComboBox()
+        self._cmp_combo_b = QComboBox()
+        for combo in (self._cmp_combo_a, self._cmp_combo_b):
+            combo.setMinimumWidth(220)
+            row2.addWidget(combo)
+        refresh_btn = QPushButton("Actualizar lista")
+        refresh_btn.clicked.connect(self._refresh_compare_combos)
+        row2.addWidget(refresh_btn)
+        compare_btn = QPushButton("Comparar A vs B")
+        compare_btn.clicked.connect(self._lab_compare)
+        row2.addWidget(compare_btn)
+        row2.addStretch()
+        panel_layout.addLayout(row2)
+
+        # --- Salida de resultados ---
+        self._lab_output = QPlainTextEdit()
+        self._lab_output.setReadOnly(True)
+        self._lab_output.setPlaceholderText(
+            "Los resultados del laboratorio apareceran aqui..."
+        )
+        panel_layout.addWidget(self._lab_output, stretch=1)
+
+        layout.addWidget(panel, stretch=1)
+        self._refresh_compare_combos()
+        return page
+
     def _build_logs_page(self) -> QWidget:
         """Consola tecnica en vivo (logs 'lino.*')."""
         page = QWidget()
@@ -403,11 +467,13 @@ class MainWindow(QMainWindow):
         engine.battery_read.connect(self._on_battery_read)
         engine.device_connected.connect(self._on_device_connected)
         engine.fingerprint_ready.connect(self._on_fingerprint_ready)
+        engine.raw_log_ready.connect(self._on_raw_log_ready)
         engine.engine_error.connect(self._on_engine_error)
 
         # Resultados de tests de audio (desde hilos de trabajo).
         self.audio_status.connect(self._on_audio_status)
         self.latency_measured.connect(self._on_latency_measured)
+        self.lab_status.connect(self._append_lab_output)
 
     # ==================================================================
     # Logica de actualizacion
@@ -725,6 +791,126 @@ class MainWindow(QMainWindow):
             confidence=data["confidence"],
             channel=data["channel"],
             classification=data["classification"],
+        )
+
+    # ==================================================================
+    # Modo laboratorio
+    # ==================================================================
+    def _append_lab_output(self, text: str) -> None:
+        self._lab_output.appendPlainText(text)
+
+    def _run_lab_test(self, func) -> None:
+        """Test de laboratorio en hilo aparte; resultado a la consola lab."""
+
+        def worker():
+            try:
+                message = func()
+            except Exception as exc:  # noqa: BLE001 - frontera de hilo
+                logger.error("Fallo en test de laboratorio: %s", exc)
+                message = f"Fallo: {exc}"
+            self.lab_status.emit(message)
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._append_lab_output(">> Ejecutando...")
+
+    def _lab_dropout(self) -> None:
+        from audio import dropout_test
+
+        def run() -> str:
+            result = dropout_test.dropout_test(duration=5.0)
+            if result is None:
+                return "Dropouts: medicion no disponible (revisar audio/microfono)"
+            return f"Continuidad de audio: {result.format()}"
+
+        self._run_lab_test(run)
+
+    def _lab_spectrum(self) -> None:
+        from audio import spectrum
+
+        def run() -> str:
+            path = spectrum.capture_and_plot(duration=3.0, out_dir=EXPORTS_DIR)
+            return (
+                f"Analisis espectral guardado: {path}"
+                if path
+                else "Espectro: captura no disponible"
+            )
+
+        self._run_lab_test(run)
+
+    def _lab_raw_log(self) -> None:
+        self._append_lab_output(">> Capturando advertisements BLE (10 s)...")
+        self.app.ble_engine.request_raw_log(10.0)
+
+    def _on_raw_log_ready(self, raw_log: dict) -> None:
+        lines = [
+            f"Raw BLE log: {raw_log['total_packets']} paquetes de "
+            f"{raw_log['devices']} dispositivo(s) en {raw_log['duration_s']:.0f} s"
+        ]
+        for mac, info in sorted(raw_log["intervals"].items()):
+            avg = info["avg_interval_ms"]
+            lines.append(
+                f"  {mac}: {info['packets']} pkt, intervalo medio "
+                f"{f'{avg:.0f} ms' if avg else '--'}"
+            )
+        self._append_lab_output("\n".join(lines))
+
+    def _lab_score(self) -> None:
+        mac = self._selected_mac() or self.app.state.selected_mac
+        if not mac:
+            self._append_lab_output("Score: selecciona un dispositivo en el Dashboard")
+            return
+        from core import scoring
+
+        result = scoring.device_quality_score(self.app.database, mac)
+        self._append_lab_output(
+            f"Device Quality Score de {mac}:\n{scoring.format_score(result)}"
+        )
+
+    def _lab_trend(self) -> None:
+        mac = self._selected_mac() or self.app.state.selected_mac
+        if not mac:
+            self._append_lab_output("Tendencia: selecciona un dispositivo en el Dashboard")
+            return
+        from core.comparison import compare_over_time
+
+        result = compare_over_time(self.app.database, mac)
+        if result is None:
+            self._append_lab_output(
+                f"Tendencia de {mac}: historico de bateria insuficiente (<8 lecturas)"
+            )
+            return
+        verdict = "DEGRADANDOSE" if result["degrading"] else "estable"
+        self._append_lab_output(
+            f"Tendencia de {mac} ({result['samples']} lecturas):\n"
+            f"  pico antiguo {result['old']['peak']}% -> reciente "
+            f"{result['recent']['peak']}% ({result['peak_trend_pct']:+.1f}%, {verdict})"
+        )
+
+    def _refresh_compare_combos(self) -> None:
+        """Rellena los combos A/B con el catalogo historico de dispositivos."""
+        try:
+            rows = self.app.database._conn.execute(
+                "SELECT mac, name FROM devices ORDER BY last_seen DESC LIMIT 50"
+            ).fetchall()
+        except Exception:  # noqa: BLE001
+            rows = []
+        for combo in (self._cmp_combo_a, self._cmp_combo_b):
+            combo.clear()
+            for mac, name in rows:
+                combo.addItem(f"{name} ({mac})", mac)
+
+    def _lab_compare(self) -> None:
+        mac_a = self._cmp_combo_a.currentData()
+        mac_b = self._cmp_combo_b.currentData()
+        if not mac_a or not mac_b or mac_a == mac_b:
+            self._append_lab_output("Comparacion: elige dos dispositivos distintos")
+            return
+        from core.comparison import compare_devices, format_comparison
+
+        result = compare_devices(self.app.database, mac_a, mac_b)
+        self._append_lab_output(
+            f"Comparacion {mac_a} vs {mac_b}:\n"
+            + format_comparison(result, name_a="A", name_b="B")
         )
 
     # ==================================================================
