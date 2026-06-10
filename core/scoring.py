@@ -55,14 +55,7 @@ def continuity_score(continuity_pct: float) -> float:
 
 
 def _latest_latency(db) -> dict | None:
-    try:
-        row = db._conn.execute(
-            """SELECT latency_ms, jitter_ms FROM latency_history
-               ORDER BY id DESC LIMIT 1"""
-        ).fetchone()
-        return {"latency_ms": row[0], "jitter_ms": row[1]} if row else None
-    except Exception:  # noqa: BLE001
-        return None
+    return db.latest_latency()
 
 
 def device_quality_score(db, mac: str, extras: dict | None = None) -> dict:

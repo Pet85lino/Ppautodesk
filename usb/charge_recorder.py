@@ -94,16 +94,7 @@ def plot_charge_curve(db, source: str, out_dir: Path, limit: int = 2000) -> Path
     Returns:
         Ruta del PNG o None (sin datos o sin matplotlib).
     """
-    try:
-        rows = db._conn.execute(
-            """SELECT voltage_v, current_a, power_w, temp_c, timestamp
-               FROM charge_history WHERE source = ?
-               ORDER BY id DESC LIMIT ?""",
-            (source, limit),
-        ).fetchall()[::-1]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Error leyendo charge_history: %s", exc)
-        return None
+    rows = db.charge_rows(source, limit=limit)
     if len(rows) < 2:
         logger.info("Curva de carga %s: sin datos suficientes", source)
         return None

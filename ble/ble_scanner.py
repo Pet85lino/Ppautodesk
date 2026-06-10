@@ -49,6 +49,19 @@ RSSI_JUMP_THRESHOLD_DB = 15
 # Muestras RSSI retenidas por dispositivo para promedio de sesion.
 RSSI_WINDOW = 20
 
+# Watchdog del adaptador: fallos de escaneo consecutivos antes de alertar.
+ADAPTER_WATCHDOG_THRESHOLD = 3
+
+
+def backoff_delays(attempts: int, base_s: float = 1.0, cap_s: float = 30.0) -> list[float]:
+    """Esperas exponenciales para reintentos de conexion (1, 2, 4... s).
+
+    Windows BLE falla de forma intermitente con muchos adaptadores; un
+    reintento inmediato suele fallar igual, el backoff da tiempo al
+    stack a recuperarse.
+    """
+    return [min(cap_s, base_s * (2**i)) for i in range(max(0, attempts))]
+
 
 @dataclass
 class DeviceInfo:
@@ -81,10 +94,18 @@ class BLEEngine(QThread):
     raw_log_ready = Signal(object)          # dict: log crudo de advertising
     engine_error = Signal(str)              # mensaje legible
 
-    def __init__(self, scan_duration: float = 4.0, connect_timeout: float = 10.0):
+    def __init__(
+        self,
+        scan_duration: float = 4.0,
+        connect_timeout: float = 10.0,
+        retry_attempts: int = 3,
+        backoff_base_s: float = 1.0,
+    ):
         super().__init__()
         self._scan_duration = scan_duration
         self._connect_timeout = connect_timeout
+        self._retry_attempts = max(1, retry_attempts)
+        self._backoff_base_s = backoff_base_s
         self._loop: asyncio.AbstractEventLoop | None = None
         self._scanning = False
 
@@ -92,6 +113,10 @@ class BLEEngine(QThread):
         self._rssi_history: dict[str, deque] = {}
         self._last_adv: dict[str, dict] = {}   # mac -> {manufacturer_hex, uuids, name}
         self._previous_macs: set[str] = set()
+
+        # Watchdog: fallos de escaneo consecutivos (salud del adaptador).
+        self._scan_failures = 0
+        self._watchdog_fired = False
 
     # ------------------------------------------------------------------
     # Ciclo de vida del hilo
@@ -186,16 +211,78 @@ class BLEEngine(QThread):
             # Orden por intensidad de senal: los mas cercanos primero.
             devices.sort(key=lambda d: d.rssi, reverse=True)
             logger.info("Escaneo completado: %d dispositivo(s)", len(devices))
+            self._scan_succeeded()
             self.scan_finished.emit(devices)
         except BleakError as exc:
             logger.error("Error de escaneo BLE: %s", exc)
+            self._scan_failed()
             self.engine_error.emit(f"Error de escaneo BLE: {exc}")
         except OSError as exc:
             # Tipico cuando el adaptador Bluetooth esta apagado o ausente.
             logger.error("Adaptador Bluetooth no disponible: %s", exc)
+            self._scan_failed()
             self.engine_error.emit(f"Adaptador Bluetooth no disponible: {exc}")
         finally:
             self._scanning = False
+
+    # ------------------------------------------------------------------
+    # Watchdog del adaptador
+    # ------------------------------------------------------------------
+    def _scan_failed(self) -> None:
+        """Cuenta fallos consecutivos; al tercero alerta una sola vez."""
+        self._scan_failures += 1
+        if self._scan_failures >= ADAPTER_WATCHDOG_THRESHOLD and not self._watchdog_fired:
+            self._watchdog_fired = True
+            logger.warning(
+                "Watchdog: %d escaneos fallidos consecutivos (adaptador degradado)",
+                self._scan_failures,
+            )
+            self.ble_event.emit(
+                "", "adapter_watchdog",
+                f"{self._scan_failures} escaneos fallidos consecutivos",
+            )
+
+    def _scan_succeeded(self) -> None:
+        """Un escaneo exitoso recupera el watchdog."""
+        if self._watchdog_fired:
+            logger.info("Watchdog: adaptador recuperado")
+            self.ble_event.emit("", "adapter_recovered", "escaneo exitoso")
+        self._scan_failures = 0
+        self._watchdog_fired = False
+
+    # ------------------------------------------------------------------
+    # Conexion con reintentos (estrategia de timeouts para Windows BLE)
+    # ------------------------------------------------------------------
+    async def _open_client(self, mac: str) -> BleakClient:
+        """Conecta con backoff exponencial entre intentos.
+
+        Lanza la ultima excepcion si todos los intentos fallan; el
+        llamador es responsable de client.disconnect().
+        """
+        delays = [0.0, *backoff_delays(self._retry_attempts - 1, self._backoff_base_s)]
+        last_exc: Exception = BleakError("sin intentos")
+        for attempt, delay in enumerate(delays, start=1):
+            if delay:
+                logger.info(
+                    "Reintento %d/%d hacia %s en %.0f s...",
+                    attempt, len(delays), mac, delay,
+                )
+                await asyncio.sleep(delay)
+            client = BleakClient(
+                mac,
+                timeout=self._connect_timeout,
+                disconnected_callback=self._on_disconnect,
+            )
+            try:
+                await client.connect()
+                return client
+            except (BleakError, asyncio.TimeoutError, OSError) as exc:
+                last_exc = exc
+                if attempt < len(delays):
+                    self.ble_event.emit(
+                        mac, "connect_retry", f"intento {attempt} fallo: {exc}"
+                    )
+        raise last_exc
 
     def _track_device(self, mac: str, rssi: int, uuids: list[str], adv, name) -> None:
         """Actualiza historial RSSI/advertisement y emite eventos BLE."""
@@ -222,65 +309,78 @@ class BLEEngine(QThread):
         self._previous_macs = current_macs
 
     async def _async_read_battery(self, mac: str) -> None:
-        """Conexion GATT y lectura de la caracteristica Battery Level."""
+        """Conexion GATT (con reintentos) y lectura de Battery Level."""
         logger.info("Conectando a %s ...", mac)
         try:
-            async with BleakClient(
-                mac,
-                timeout=self._connect_timeout,
-                disconnected_callback=self._on_disconnect,
-            ) as client:
-                self.device_connected.emit(mac, True)
-                level = await read_battery_level(client)
-                self.battery_read.emit(mac, level)
+            client = await self._open_client(mac)
         except (BleakError, asyncio.TimeoutError, OSError) as exc:
             logger.warning("No se pudo conectar a %s: %s", mac, exc)
             self.device_connected.emit(mac, False)
             self.ble_event.emit(mac, "connect_failed", str(exc))
             self.engine_error.emit(f"No se pudo conectar a {mac}: {exc}")
+            return
+        try:
+            self.device_connected.emit(mac, True)
+            level = await read_battery_level(client)
+            self.battery_read.emit(mac, level)
+        except (BleakError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning("Lectura GATT de %s fallo: %s", mac, exc)
+            self.battery_read.emit(mac, None)
+        finally:
+            await self._safe_disconnect(client)
 
     async def _async_fingerprint(self, mac: str) -> None:
         """Captura las capacidades del dispositivo en una sola conexion."""
         logger.info("Fingerprinting de %s ...", mac)
         try:
-            async with BleakClient(
-                mac,
-                timeout=self._connect_timeout,
-                disconnected_callback=self._on_disconnect,
-            ) as client:
-                self.device_connected.emit(mac, True)
-                services = await read_gatt_profile(client)
-                battery = await read_battery_level(client)
-                try:
-                    mtu = int(client.mtu_size)
-                except (AttributeError, BleakError):
-                    mtu = None
-
-                adv = self._last_adv.get(mac, {})
-                fingerprint = {
-                    "mac": mac,
-                    "name": adv.get("name", "(sin nombre)"),
-                    "manufacturer_data": adv.get("manufacturer_hex", {}),
-                    "uuids": adv.get("uuids", []),
-                    "services": services,
-                    "mtu": mtu,
-                    "avg_rssi": self.session_avg_rssi(mac),
-                    "battery": battery,
-                    "codecs": infer_codecs(
-                        self._manufacturer_for(mac), adv.get("uuids", [])
-                    ),
-                }
-                self.battery_read.emit(mac, battery)
-                self.fingerprint_ready.emit(mac, fingerprint)
-                logger.info(
-                    "Fingerprint de %s: %d servicio(s), MTU=%s",
-                    mac, len(services), mtu,
-                )
+            client = await self._open_client(mac)
         except (BleakError, asyncio.TimeoutError, OSError) as exc:
             logger.warning("Fingerprinting de %s fallo: %s", mac, exc)
             self.device_connected.emit(mac, False)
             self.ble_event.emit(mac, "connect_failed", str(exc))
             self.engine_error.emit(f"Fingerprinting de {mac} fallo: {exc}")
+            return
+        try:
+            self.device_connected.emit(mac, True)
+            services = await read_gatt_profile(client)
+            battery = await read_battery_level(client)
+            try:
+                mtu = int(client.mtu_size)
+            except (AttributeError, BleakError):
+                mtu = None
+
+            adv = self._last_adv.get(mac, {})
+            fingerprint = {
+                "mac": mac,
+                "name": adv.get("name", "(sin nombre)"),
+                "manufacturer_data": adv.get("manufacturer_hex", {}),
+                "uuids": adv.get("uuids", []),
+                "services": services,
+                "mtu": mtu,
+                "avg_rssi": self.session_avg_rssi(mac),
+                "battery": battery,
+                "codecs": infer_codecs(
+                    self._manufacturer_for(mac), adv.get("uuids", [])
+                ),
+            }
+            self.battery_read.emit(mac, battery)
+            self.fingerprint_ready.emit(mac, fingerprint)
+            logger.info(
+                "Fingerprint de %s: %d servicio(s), MTU=%s",
+                mac, len(services), mtu,
+            )
+        except (BleakError, asyncio.TimeoutError, OSError) as exc:
+            logger.warning("Fingerprinting de %s fallo tras conectar: %s", mac, exc)
+            self.engine_error.emit(f"Fingerprinting de {mac} fallo: {exc}")
+        finally:
+            await self._safe_disconnect(client)
+
+    async def _safe_disconnect(self, client: BleakClient) -> None:
+        """Desconexion tolerante: el cierre nunca propaga errores."""
+        try:
+            await client.disconnect()
+        except (BleakError, OSError) as exc:
+            logger.debug("Desconexion con error ignorado: %s", exc)
 
     async def _async_raw_log(self, duration: float) -> None:
         """Captura cruda: un registro por advertisement recibido.

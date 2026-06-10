@@ -3,7 +3,31 @@
 Suite tecnica multiplataforma de diagnostico para auriculares Bluetooth TWS
 (True Wireless Stereo): Maxell, JBL, Xiaomi, Samsung, Sony y genericos.
 
-## Version actual: V1.3 (0.4.0)
+## Version actual: V1.4 (0.5.0)
+
+### Novedades V1.4 (robustez y validacion)
+- **Estrategia de timeouts BLE**: reconexion con backoff exponencial
+  (1-2-4 s, configurable) y watchdog del adaptador (3 fallos -> alerta
+  `adapter_watchdog` + auto-refresh escalado; se restaura al recuperar)
+- **Thread-safety**: SQLite en modo WAL + lock de proceso; verificado
+  con 8 hilos escribiendo concurrentemente sin perdida de filas
+- **Preparacion DuckDB**: toda consulta pasa por la API de
+  `DatabaseManager`; ningun consumidor toca SQL directo
+- **Monitor de memoria/rendimiento**: tracemalloc + RSS muestreados
+  periodicamente (config `perf.monitor_enabled`) para sesiones overnight
+- **Versionado de reportes**: cada reporte/sesion incluye
+  `schema_version`, `analysis_engine`, `scoring_version`, `analytics_version`
+- **Base de patrones de flota**: clusters de UUIDs y patrones por
+  fabricante minados de los fingerprints (semilla para heuristicas ML)
+- **Soak testing**: `tools/soak_test.py` headless para validacion
+  empirica (matrices adaptador x TWS, overnight) con resumen final
+- **Documentacion tecnica**: `docs/` con arquitectura, motor BLE,
+  pipeline DSP, scoring, analitica, protocolos USB y notas Windows
+- CI con `--durations=10` (tests mas lentos visibles)
+
+---
+
+### Historial V1.3 (0.4.0)
 
 ### Novedades V1.3
 - **Continuidad de audio (packet loss)**: tono continuo + analisis de

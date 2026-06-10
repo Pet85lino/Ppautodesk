@@ -1,6 +1,6 @@
 {
     "app_name": "LINO Audio Diagnostic",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "scan": {
         "duration_seconds": 4.0,
         "auto_refresh_ms": 5000
@@ -8,6 +8,14 @@
     "battery": {
         "poll_interval_ms": 15000,
         "connect_timeout_seconds": 10.0
+    },
+    "ble": {
+        "retry_attempts": 3,
+        "backoff_base_s": 1.0
+    },
+    "perf": {
+        "monitor_enabled": false,
+        "sample_interval_s": 60
     },
     "database": {
         "path": "lino_diagnostic.db"

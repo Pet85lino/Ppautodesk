@@ -23,6 +23,7 @@ from core.app_state import AppState
 from core.config_manager import ConfigManager
 from core.event_bus import EventBus
 from core.logger import setup_logging
+from core.perf_monitor import PerfMonitor
 from database.database import DatabaseManager
 
 logger = logging.getLogger("lino.core.app")
@@ -54,6 +55,8 @@ class AppManager:
             connect_timeout=float(
                 self.config.get("battery.connect_timeout_seconds", 10.0)
             ),
+            retry_attempts=int(self.config.get("ble.retry_attempts", 3)),
+            backoff_base_s=float(self.config.get("ble.backoff_base_s", 1.0)),
         )
 
         # 5. Cableado: motor BLE -> estado + persistencia + bus.
@@ -70,11 +73,23 @@ class AppManager:
     def start(self) -> None:
         """Arranca los subsistemas en segundo plano."""
         self.ble_engine.start()
+
+        # Monitor de memoria/rendimiento (opt-in: sesiones largas).
+        self.perf_monitor: PerfMonitor | None = None
+        if self.config.get("perf.monitor_enabled", False):
+            self.perf_monitor = PerfMonitor(
+                interval_s=float(self.config.get("perf.sample_interval_s", 60))
+            )
+            self.perf_monitor.start()
+
         self.database.save_log("INFO", "Aplicacion iniciada")
 
     def shutdown(self) -> None:
         """Apagado ordenado: motor BLE primero, base de datos al final."""
         logger.info("Apagando subsistemas...")
+        if getattr(self, "perf_monitor", None):
+            logger.info("Resumen perf: %s", self.perf_monitor.summary())
+            self.perf_monitor.stop()
         self.database.save_log("INFO", "Aplicacion cerrada")
         self.ble_engine.shutdown()
         self.database.close()

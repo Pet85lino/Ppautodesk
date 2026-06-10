@@ -32,6 +32,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "poll_interval_ms": 15000,
         "connect_timeout_seconds": 10.0,
     },
+    "ble": {
+        "retry_attempts": 3,
+        "backoff_base_s": 1.0,
+    },
+    "perf": {
+        "monitor_enabled": False,
+        "sample_interval_s": 60,
+    },
     "database": {
         "path": "lino_diagnostic.db",
     },

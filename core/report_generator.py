@@ -172,16 +172,7 @@ def _generate_pdf(report: dict, db, out_path: Path) -> Path:
 
         # ---------- Pagina 2: graficas historicas ----------
         battery_rows = db.battery_history(mac, limit=100) if mac else []
-        rssi_rows = []
-        if mac:
-            try:
-                rssi_rows = db._conn.execute(
-                    "SELECT timestamp, rssi FROM scan_history WHERE mac = ? "
-                    "ORDER BY id DESC LIMIT 100",
-                    (mac,),
-                ).fetchall()[::-1]
-            except Exception:  # noqa: BLE001
-                rssi_rows = []
+        rssi_rows = db.rssi_timeline(mac, limit=100) if mac else []
 
         if battery_rows or rssi_rows:
             fig, axes = plt.subplots(2, 1, figsize=(8.27, 11.69), facecolor=BG)

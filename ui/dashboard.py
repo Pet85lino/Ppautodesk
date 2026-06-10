@@ -468,6 +468,7 @@ class MainWindow(QMainWindow):
         engine.device_connected.connect(self._on_device_connected)
         engine.fingerprint_ready.connect(self._on_fingerprint_ready)
         engine.raw_log_ready.connect(self._on_raw_log_ready)
+        engine.ble_event.connect(self._on_ble_event)
         engine.engine_error.connect(self._on_engine_error)
 
         # Resultados de tests de audio (desde hilos de trabajo).
@@ -656,6 +657,22 @@ class MainWindow(QMainWindow):
     def _on_engine_error(self, message: str) -> None:
         self._battery_button.setEnabled(self._selected_mac() is not None)
         self.statusBar().showMessage(message)
+
+    def _on_ble_event(self, mac: str, event_type: str, detail: str) -> None:
+        """Reaccion al watchdog: escalar el intervalo de escaneo cuando el
+        adaptador esta degradado y restaurarlo al recuperarse."""
+        if event_type == "adapter_watchdog":
+            slowed = min(60_000, self._refresh_timer.interval() * 2)
+            self._refresh_timer.setInterval(slowed)
+            self.statusBar().showMessage(
+                f"Adaptador BLE degradado ({detail}); auto-refresh a {slowed // 1000} s"
+            )
+        elif event_type == "adapter_recovered":
+            configured = int(self.app.config.get("scan.auto_refresh_ms", 5000))
+            self._refresh_timer.setInterval(configured)
+            self.statusBar().showMessage(
+                f"Adaptador BLE recuperado; auto-refresh a {configured // 1000} s"
+            )
 
     # ==================================================================
     # Audio: seleccion de salida
@@ -888,12 +905,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_compare_combos(self) -> None:
         """Rellena los combos A/B con el catalogo historico de dispositivos."""
-        try:
-            rows = self.app.database._conn.execute(
-                "SELECT mac, name FROM devices ORDER BY last_seen DESC LIMIT 50"
-            ).fetchall()
-        except Exception:  # noqa: BLE001
-            rows = []
+        rows = self.app.database.devices_catalog(limit=50)
         for combo in (self._cmp_combo_a, self._cmp_combo_b):
             combo.clear()
             for mac, name in rows:

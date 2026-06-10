@@ -14,9 +14,13 @@ Tablas:
 Exportacion: dump completo en JSON o CSV (un archivo por tabla) hacia
 la carpeta exports/ del proyecto.
 
-Nota de hilos: todas las escrituras llegan desde el hilo principal de Qt
-(las senales del motor BLE se entregan ahi), por lo que una unica conexion
-con `check_same_thread=False` y commits inmediatos es suficiente.
+Concurrencia: la conexion usa WAL + un lock de proceso. El flujo normal
+escribe solo desde el hilo principal de Qt (senales), pero el lock hace
+seguras las escrituras desde workers (soak tests, scripts headless).
+
+Preparacion DuckDB: NINGUN consumidor debe tocar `_conn` directamente;
+toda consulta pasa por la API de este modulo (rssi_values, scan_count,
+latest_latency, ...). Migrar de motor = reimplementar solo esta clase.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import csv
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -147,9 +152,13 @@ class DatabaseManager:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        # WAL: lectores no bloquean al escritor (sesiones largas, workers).
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA)
         self._conn.commit()
-        logger.info("Base de datos lista en %s", db_path)
+        # Lock de proceso: serializa accesos desde hilos de trabajo.
+        self._lock = threading.Lock()
+        logger.info("Base de datos lista en %s (WAL)", db_path)
 
     # ------------------------------------------------------------------
     # Escrituras
@@ -162,7 +171,7 @@ class DatabaseManager:
         """
         ts = _now()
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 for dev in devices:
                     self._conn.execute(
                         """INSERT INTO devices (mac, name, manufacturer, first_seen, last_seen)
@@ -185,7 +194,7 @@ class DatabaseManager:
         if level is None:
             return
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     "INSERT INTO battery_history (mac, level, timestamp) VALUES (?, ?, ?)",
                     (mac, level, _now()),
@@ -198,7 +207,7 @@ class DatabaseManager:
         if percent is None:
             return
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     "INSERT INTO power_history (percent, plugged, timestamp) VALUES (?, ?, ?)",
                     (percent, 1 if plugged else 0, _now()),
@@ -216,7 +225,7 @@ class DatabaseManager:
     ) -> None:
         """Registra una medicion de latencia/jitter de audio."""
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     """INSERT INTO latency_history
                        (latency_ms, jitter_ms, confidence, channel, classification, timestamp)
@@ -229,7 +238,7 @@ class DatabaseManager:
     def save_fingerprint(self, fingerprint: dict) -> None:
         """Persiste/actualiza las capacidades GATT de un dispositivo."""
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     """INSERT INTO device_capabilities
                        (mac, name, manufacturer_data, uuids, services, mtu,
@@ -259,30 +268,33 @@ class DatabaseManager:
         except sqlite3.Error as exc:
             logger.error("Error guardando fingerprint: %s", exc)
 
+    # Columnas de device_capabilities en el orden del esquema.
+    _CAPABILITY_COLUMNS = (
+        "mac", "name", "manufacturer_data", "uuids", "services",
+        "mtu", "avg_rssi", "codecs", "updated_at",
+    )
+
     def get_fingerprint(self, mac: str) -> dict | None:
         """Capacidades guardadas de un dispositivo (JSON deserializado)."""
+        rows = self._query(
+            "SELECT * FROM device_capabilities WHERE mac = ?", (mac,)
+        )
+        if not rows:
+            return None
         try:
-            row = self._conn.execute(
-                "SELECT * FROM device_capabilities WHERE mac = ?", (mac,)
-            ).fetchone()
-            if row is None:
-                return None
-            columns = [d[0] for d in self._conn.execute(
-                "SELECT * FROM device_capabilities LIMIT 0"
-            ).description]
-            data = dict(zip(columns, row))
+            data = dict(zip(self._CAPABILITY_COLUMNS, rows[0]))
             for key in ("manufacturer_data", "uuids", "services", "codecs"):
                 if data.get(key):
                     data[key] = json.loads(data[key])
             return data
-        except (sqlite3.Error, json.JSONDecodeError) as exc:
-            logger.error("Error leyendo fingerprint: %s", exc)
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.error("Error deserializando fingerprint: %s", exc)
             return None
 
     def save_ble_event(self, mac: str, event_type: str, detail: str) -> None:
         """Logging BLE: desconexiones, saltos RSSI, dispositivos perdidos."""
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     "INSERT INTO ble_events (mac, event_type, detail, timestamp) VALUES (?, ?, ?, ?)",
                     (mac, event_type, detail, _now()),
@@ -299,7 +311,7 @@ class DatabaseManager:
         samples = raw_log.get("samples", [])
         ts = _now()
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.executemany(
                     """INSERT INTO adv_timeline (mac, t_ms, rssi, payload, capture_ts)
                        VALUES (?, ?, ?, ?, ?)""",
@@ -330,7 +342,7 @@ class DatabaseManager:
     ) -> None:
         """Muestra de un medidor USB (curvas de carga)."""
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     """INSERT INTO charge_history
                        (source, voltage_v, current_a, power_w, capacity_mah, temp_c, timestamp)
@@ -343,7 +355,7 @@ class DatabaseManager:
     def save_log(self, level: str, message: str) -> None:
         """save_log(): persiste un evento tecnico en la tabla logs."""
         try:
-            with self._conn:
+            with self._lock, self._conn:
                 self._conn.execute(
                     "INSERT INTO logs (level, message, timestamp) VALUES (?, ?, ?)",
                     (level, message, _now()),
@@ -356,24 +368,126 @@ class DatabaseManager:
     # ------------------------------------------------------------------
     def battery_history(self, mac: str, limit: int = 50) -> list[tuple[str, int]]:
         """Ultimas lecturas de bateria de un dispositivo (timestamp, nivel)."""
-        try:
-            rows = self._conn.execute(
-                """SELECT timestamp, level FROM battery_history
-                   WHERE mac = ? ORDER BY id DESC LIMIT ?""",
-                (mac, limit),
-            ).fetchall()
-            return list(reversed(rows))
-        except sqlite3.Error as exc:
-            logger.error("Error leyendo historial de bateria: %s", exc)
-            return []
+        rows = self._query(
+            """SELECT timestamp, level FROM battery_history
+               WHERE mac = ? ORDER BY id DESC LIMIT ?""",
+            (mac, limit),
+        )
+        return rows[::-1]
 
     def known_devices_count(self) -> int:
         """Total de dispositivos distintos vistos historicamente."""
+        rows = self._query("SELECT COUNT(*) FROM devices")
+        return int(rows[0][0]) if rows else 0
+
+    # ------------------------------------------------------------------
+    # API de consultas (preparacion DuckDB: nadie mas toca _conn)
+    # ------------------------------------------------------------------
+    def _query(self, sql: str, params: tuple = ()) -> list[tuple]:
+        """Ejecuta una consulta de lectura de forma segura y serializada."""
         try:
-            row = self._conn.execute("SELECT COUNT(*) FROM devices").fetchone()
-            return int(row[0]) if row else 0
-        except sqlite3.Error:
-            return 0
+            with self._lock:
+                return self._conn.execute(sql, params).fetchall()
+        except sqlite3.Error as exc:
+            logger.error("Error en consulta (%s...): %s", sql[:40], exc)
+            return []
+
+    def rssi_values(self, mac: str, limit: int = 200) -> list[int]:
+        """Ultimos RSSI registrados de un dispositivo (mas reciente primero)."""
+        rows = self._query(
+            "SELECT rssi FROM scan_history WHERE mac = ? ORDER BY id DESC LIMIT ?",
+            (mac, limit),
+        )
+        return [r[0] for r in rows if r[0] is not None]
+
+    def rssi_timeline(self, mac: str, limit: int = 100) -> list[tuple[str, int]]:
+        """Serie (timestamp, rssi) en orden cronologico para graficas."""
+        rows = self._query(
+            """SELECT timestamp, rssi FROM scan_history WHERE mac = ?
+               ORDER BY id DESC LIMIT ?""",
+            (mac, limit),
+        )
+        return rows[::-1]
+
+    def scan_count(self, mac: str) -> int:
+        rows = self._query("SELECT COUNT(*) FROM scan_history WHERE mac = ?", (mac,))
+        return int(rows[0][0]) if rows else 0
+
+    def adverse_event_count(self, mac: str) -> int:
+        """Eventos BLE adversos (desconexion, fallo, fuera de rango)."""
+        rows = self._query(
+            """SELECT COUNT(*) FROM ble_events
+               WHERE mac = ? AND event_type IN
+                     ('disconnected', 'connect_failed', 'out_of_range')""",
+            (mac,),
+        )
+        return int(rows[0][0]) if rows else 0
+
+    def ble_events_for(self, mac: str, limit: int = 500) -> list[dict]:
+        rows = self._query(
+            """SELECT event_type, detail, timestamp FROM ble_events
+               WHERE mac = ? ORDER BY id DESC LIMIT ?""",
+            (mac, limit),
+        )
+        return [{"type": r[0], "detail": r[1], "timestamp": r[2]} for r in rows]
+
+    def latest_latency(self) -> dict | None:
+        """Ultima medicion de latencia (latency_ms, jitter_ms) o None."""
+        rows = self._query(
+            "SELECT latency_ms, jitter_ms FROM latency_history ORDER BY id DESC LIMIT 1"
+        )
+        return {"latency_ms": rows[0][0], "jitter_ms": rows[0][1]} if rows else None
+
+    def latest_jitter_ms(self) -> float | None:
+        rows = self._query(
+            """SELECT jitter_ms FROM latency_history
+               WHERE jitter_ms IS NOT NULL ORDER BY id DESC LIMIT 1"""
+        )
+        return float(rows[0][0]) if rows else None
+
+    def temperatures(self, source: str | None = None, limit: int = 5000) -> list[float]:
+        """Temperaturas de carga en orden cronologico."""
+        if source:
+            rows = self._query(
+                """SELECT temp_c FROM charge_history
+                   WHERE temp_c IS NOT NULL AND source = ?
+                   ORDER BY id ASC LIMIT ?""",
+                (source, limit),
+            )
+        else:
+            rows = self._query(
+                """SELECT temp_c FROM charge_history WHERE temp_c IS NOT NULL
+                   ORDER BY id ASC LIMIT ?""",
+                (limit,),
+            )
+        return [r[0] for r in rows]
+
+    def charge_rows(self, source: str, limit: int = 2000) -> list[tuple]:
+        """Filas (V, A, W, temp, ts) de un medidor, orden cronologico."""
+        rows = self._query(
+            """SELECT voltage_v, current_a, power_w, temp_c, timestamp
+               FROM charge_history WHERE source = ?
+               ORDER BY id DESC LIMIT ?""",
+            (source, limit),
+        )
+        return rows[::-1]
+
+    def devices_catalog(self, limit: int = 50) -> list[tuple[str, str]]:
+        """Catalogo (mac, nombre) ordenado por ultima vez visto."""
+        return self._query(
+            "SELECT mac, name FROM devices ORDER BY last_seen DESC LIMIT ?",
+            (limit,),
+        )
+
+    def all_fingerprints(self) -> list[dict]:
+        """Todos los fingerprints guardados (para mineria de patrones)."""
+        rows = self._query("SELECT mac FROM device_capabilities")
+        result = []
+        for (mac,) in rows:
+            fingerprint = self.get_fingerprint(mac)
+            if fingerprint:
+                result.append(fingerprint)
+        return result
 
     def _dump_table(self, table: str) -> tuple[list[str], list[tuple]]:
         """Columnas y filas completas de una tabla (solo tablas conocidas)."""

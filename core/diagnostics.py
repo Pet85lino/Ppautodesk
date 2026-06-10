@@ -29,6 +29,7 @@ from core import analytics, scoring
 from core.config_manager import PROJECT_ROOT
 from core.report_generator import generate_report
 from core.session_recorder import SessionRecorder
+from core.versioning import engine_metadata
 
 logger = logging.getLogger("lino.core.diagnostics")
 
@@ -56,6 +57,9 @@ class DiagnosticRunner(QObject):
         self._app = app
         self._device = device
         self._report: dict = {
+            # Versionado: sin esto, reportes de motores distintos no son
+            # comparables cuando los algoritmos evolucionen.
+            "meta": engine_metadata(app.config.get("version")),
             "device": {
                 "name": device.name,
                 "mac": device.mac,

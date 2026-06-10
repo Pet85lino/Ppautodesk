@@ -72,16 +72,7 @@ def battery_health_score(db, mac: str) -> dict | None:
 
 def rssi_stats(db, mac: str) -> dict | None:
     """Media y varianza del RSSI registrado en scan_history."""
-    try:
-        rows = db._conn.execute(
-            "SELECT rssi FROM scan_history WHERE mac = ? ORDER BY id DESC LIMIT 200",
-            (mac,),
-        ).fetchall()
-    except Exception as exc:  # noqa: BLE001 - lectura defensiva
-        logger.error("Error leyendo RSSI de %s: %s", mac, exc)
-        return None
-
-    values = [r[0] for r in rows if r[0] is not None]
+    values = db.rssi_values(mac, limit=200)
     if len(values) < 2:
         return None
     return {
@@ -94,32 +85,13 @@ def rssi_stats(db, mac: str) -> dict | None:
 
 def _adverse_event_rate(db, mac: str) -> float:
     """Eventos BLE adversos por escaneo registrado (0.0 si no hay datos)."""
-    try:
-        events = db._conn.execute(
-            """SELECT COUNT(*) FROM ble_events
-               WHERE mac = ? AND event_type IN
-                     ('disconnected', 'connect_failed', 'out_of_range')""",
-            (mac,),
-        ).fetchone()[0]
-        scans = db._conn.execute(
-            "SELECT COUNT(*) FROM scan_history WHERE mac = ?", (mac,)
-        ).fetchone()[0]
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Error contando eventos BLE de %s: %s", mac, exc)
-        return 0.0
-    return events / scans if scans else 0.0
+    scans = db.scan_count(mac)
+    return db.adverse_event_count(mac) / scans if scans else 0.0
 
 
 def _latest_jitter_ms(db) -> float | None:
     """Ultimo jitter medido (la latencia es global, no por dispositivo)."""
-    try:
-        row = db._conn.execute(
-            """SELECT jitter_ms FROM latency_history
-               WHERE jitter_ms IS NOT NULL ORDER BY id DESC LIMIT 1"""
-        ).fetchone()
-        return float(row[0]) if row else None
-    except Exception:  # noqa: BLE001
-        return None
+    return db.latest_jitter_ms()
 
 
 def stability_score(db, mac: str) -> dict:
@@ -168,20 +140,7 @@ def temperature_analytics(db, source: str | None = None) -> dict | None:
         dict {samples, max_c, mean_c, overheat_events, trend_c} o None
         si no hay datos de temperatura registrados.
     """
-    query = "SELECT temp_c FROM charge_history WHERE temp_c IS NOT NULL"
-    params: tuple = ()
-    if source:
-        query += " AND source = ?"
-        params = (source,)
-    query += " ORDER BY id ASC LIMIT 5000"
-
-    try:
-        rows = db._conn.execute(query, params).fetchall()
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Error leyendo temperaturas: %s", exc)
-        return None
-
-    temps = [r[0] for r in rows]
+    temps = db.temperatures(source)
     if len(temps) < 2:
         return None
 

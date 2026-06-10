@@ -53,20 +53,9 @@ class SessionRecorder:
 
     def save_ble_log(self, db, mac: str, limit: int = 500) -> Path | None:
         """ble_log.json: eventos BLE + fingerprint del dispositivo."""
-        try:
-            rows = db._conn.execute(
-                """SELECT event_type, detail, timestamp FROM ble_events
-                   WHERE mac = ? ORDER BY id DESC LIMIT ?""",
-                (mac, limit),
-            ).fetchall()
-        except Exception as exc:  # noqa: BLE001 - lectura defensiva
-            logger.error("Error leyendo eventos BLE para la sesion: %s", exc)
-            rows = []
         payload = {
             "mac": mac,
-            "events": [
-                {"type": r[0], "detail": r[1], "timestamp": r[2]} for r in rows
-            ],
+            "events": db.ble_events_for(mac, limit=limit),
             "capabilities": db.get_fingerprint(mac),
         }
         return self._write_json(self.session_dir / "ble_log.json", payload)
