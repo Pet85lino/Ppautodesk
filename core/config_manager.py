@@ -1,6 +1,6 @@
 """
-core/config.py
---------------
+core/config_manager.py
+----------------------
 Carga y acceso centralizado a la configuracion de la aplicacion (config.json).
 
 Si el archivo no existe o esta corrupto, se usan valores por defecto para que
@@ -45,11 +45,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
-class Config:
+class ConfigManager:
     """Acceso de solo lectura a la configuracion con notacion por puntos.
 
     Ejemplo:
-        cfg = Config.load()
+        cfg = ConfigManager.load()
         cfg.get("scan.auto_refresh_ms")  -> 5000
     """
 
@@ -57,7 +57,7 @@ class Config:
         self._data = data
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "Config":
+    def load(cls, path: Path | None = None) -> "ConfigManager":
         """Carga config.json fusionado sobre los valores por defecto."""
         config_path = path or (PROJECT_ROOT / "config.json")
         data = json.loads(json.dumps(DEFAULT_CONFIG))  # copia profunda

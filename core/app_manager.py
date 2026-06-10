@@ -5,9 +5,9 @@ Orquestador central de la aplicacion.
 
 Responsabilidades:
     * Cargar configuracion e inicializar logging.
-    * Crear la base de datos y el motor BLE.
-    * Conectar las senales del motor a la persistencia (toda escritura
-      SQLite ocurre en el hilo principal de Qt, via senales).
+    * Crear base de datos, motor BLE, estado central y bus de eventos.
+    * Conectar las senales del motor a la persistencia y al bus (toda
+      escritura SQLite ocurre en el hilo principal de Qt, via senales).
     * Apagado ordenado de todos los subsistemas.
 
 La UI (dashboard) recibe una instancia de AppManager y nunca crea
@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 
 from ble.ble_scanner import BLEEngine
-from core.config import Config
+from core.app_state import AppState
+from core.config_manager import ConfigManager
+from core.event_bus import EventBus
 from core.logger import setup_logging
 from database.database import DatabaseManager
 
@@ -31,7 +33,7 @@ class AppManager:
 
     def __init__(self):
         # 1. Configuracion + logging (antes que cualquier otro subsistema).
-        self.config = Config.load()
+        self.config = ConfigManager.load()
         setup_logging(self.config.get("logging.level", "INFO"))
         logger.info(
             "%s v%s inicializando...",
@@ -42,7 +44,11 @@ class AppManager:
         # 2. Persistencia SQLite.
         self.database = DatabaseManager(self.config.database_path)
 
-        # 3. Motor BLE en hilo dedicado.
+        # 3. Estado central y bus de eventos (desacople UI / backend).
+        self.state = AppState()
+        self.bus = EventBus()
+
+        # 4. Motor BLE en hilo dedicado.
         self.ble_engine = BLEEngine(
             scan_duration=float(self.config.get("scan.duration_seconds", 4.0)),
             connect_timeout=float(
@@ -50,9 +56,11 @@ class AppManager:
             ),
         )
 
-        # 4. Persistencia automatica de resultados BLE.
+        # 5. Cableado: motor BLE -> estado + persistencia + bus.
         self.ble_engine.scan_finished.connect(self._on_scan_finished)
         self.ble_engine.battery_read.connect(self._on_battery_read)
+        self.ble_engine.fingerprint_ready.connect(self._on_fingerprint)
+        self.ble_engine.ble_event.connect(self._on_ble_event)
         self.ble_engine.engine_error.connect(self._on_engine_error)
 
     # ------------------------------------------------------------------
@@ -74,12 +82,33 @@ class AppManager:
     # Persistencia de eventos BLE (ejecutado en el hilo principal de Qt)
     # ------------------------------------------------------------------
     def _on_scan_finished(self, devices: list) -> None:
+        self.state.apply_scan(devices)
         self.database.save_scan_results(devices)
+        self.bus.publish("ble.scan", devices)
 
     def _on_battery_read(self, mac: str, level) -> None:
+        self.state.set_battery(mac, level)
         self.database.save_battery(mac, level)
         if level is not None:
             self.database.save_log("INFO", f"Bateria {mac}: {level}%")
+        self.bus.publish("ble.battery", {"mac": mac, "level": level})
+
+    def _on_fingerprint(self, mac: str, fingerprint: dict) -> None:
+        # El promedio RSSI de la sesion completa vive en AppState.
+        avg = self.state.avg_rssi(mac)
+        if avg is not None:
+            fingerprint["avg_rssi"] = avg
+        self.database.save_fingerprint(fingerprint)
+        self.database.save_log(
+            "INFO",
+            f"Fingerprint {mac}: {len(fingerprint.get('services', []))} servicios, "
+            f"codecs {fingerprint.get('codecs', [])}",
+        )
+        self.bus.publish("ble.fingerprint", fingerprint)
+
+    def _on_ble_event(self, mac: str, event_type: str, detail: str) -> None:
+        self.database.save_ble_event(mac, event_type, detail)
+        self.bus.publish("ble.event", {"mac": mac, "type": event_type, "detail": detail})
 
     def _on_engine_error(self, message: str) -> None:
         self.database.save_log("ERROR", message)

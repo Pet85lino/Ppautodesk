@@ -43,9 +43,10 @@ from PySide6.QtWidgets import (
 from audio import audio_test, latency_test
 from ble.ble_scanner import DeviceInfo
 from core.app_manager import AppManager
-from core.config import PROJECT_ROOT
+from core.config_manager import PROJECT_ROOT
+from core.diagnostics import DiagnosticRunner
 from ui.themes import DARK_GLASS_QSS
-from ui.widgets import BatteryIndicator, GlassPanel, LogConsole, StatCard
+from ui.widgets import BatteryIndicator, GlassPanel, LiveChart, LogConsole, StatCard
 from usb.usb_monitor import PowerStatus, check_alerts, get_power_status, list_serial_ports
 
 logger = logging.getLogger("lino.ui.dashboard")
@@ -229,7 +230,31 @@ class MainWindow(QMainWindow):
         self._battery_button.setEnabled(False)
         self._battery_button.clicked.connect(self._on_read_battery_clicked)
         battery_layout.addWidget(self._battery_button)
+
+        self._fingerprint_button = QPushButton("Fingerprint")
+        self._fingerprint_button.setEnabled(False)
+        self._fingerprint_button.setToolTip(
+            "Captura servicios GATT, MTU, codecs probables y RSSI promedio"
+        )
+        self._fingerprint_button.clicked.connect(self._on_fingerprint_clicked)
+        battery_layout.addWidget(self._fingerprint_button)
+
+        self._diagnose_button = QPushButton("Diagnosticar auriculares")
+        self._diagnose_button.setEnabled(False)
+        self._diagnose_button.setToolTip(
+            "Pipeline completo: bateria + RMS + latencia + jitter + reporte PDF"
+        )
+        self._diagnose_button.clicked.connect(self._on_diagnose_clicked)
+        battery_layout.addWidget(self._diagnose_button)
         layout.addWidget(battery_panel)
+
+        # --- Graficas en tiempo real del dispositivo seleccionado ---
+        charts_row = QHBoxLayout()
+        self._rssi_chart = LiveChart("RSSI live", unit=" dBm", color="#00E5FF")
+        self._battery_chart = LiveChart("Bateria live", unit=" %", color="#2EE6A8")
+        charts_row.addWidget(self._rssi_chart)
+        charts_row.addWidget(self._battery_chart)
+        layout.addLayout(charts_row)
 
         return page
 
@@ -377,6 +402,7 @@ class MainWindow(QMainWindow):
         engine.scan_finished.connect(self.update_dashboard)
         engine.battery_read.connect(self._on_battery_read)
         engine.device_connected.connect(self._on_device_connected)
+        engine.fingerprint_ready.connect(self._on_fingerprint_ready)
         engine.engine_error.connect(self._on_engine_error)
 
         # Resultados de tests de audio (desde hilos de trabajo).
@@ -407,6 +433,10 @@ class MainWindow(QMainWindow):
         self._card_found.set_value(str(len(devices)))
         self._card_known.set_value(str(self.app.database.known_devices_count()))
         self._card_last_scan.set_value(datetime.now().strftime("%H:%M:%S"))
+
+        # Grafica RSSI live del dispositivo seleccionado (serie en AppState).
+        if selected_mac:
+            self._rssi_chart.set_series(self.app.state.rssi_history.get(selected_mac, []))
         self.statusBar().showMessage(
             f"Escaneo completado: {len(devices)} dispositivo(s) | "
             f"auto-refresh cada {self._refresh_timer.interval() // 1000} s"
@@ -469,14 +499,21 @@ class MainWindow(QMainWindow):
 
     def _on_selection_changed(self) -> None:
         mac = self._selected_mac()
-        self._battery_button.setEnabled(mac is not None)
+        self.app.state.select(mac)
+        for btn in (self._battery_button, self._fingerprint_button, self._diagnose_button):
+            btn.setEnabled(mac is not None)
         if mac is None:
             self._selected_label.setText("Selecciona un dispositivo")
             self._battery_bar.set_unknown()
+            self._rssi_chart.clear()
+            self._battery_chart.clear()
             return
         device = self._devices[self._table.currentRow()]
         self._selected_label.setText(f"{device.name}  ({device.mac})")
         self._battery_bar.set_level(self._battery_levels.get(mac))
+        # Cargar las series live acumuladas en AppState para esta MAC.
+        self._rssi_chart.set_series(self.app.state.rssi_history.get(mac, []))
+        self._battery_chart.set_series(self.app.state.battery_history_live.get(mac, []))
 
     def _on_read_battery_clicked(self) -> None:
         mac = self._selected_mac()
@@ -491,6 +528,8 @@ class MainWindow(QMainWindow):
         self._battery_button.setEnabled(self._selected_mac() is not None)
         if mac == self._selected_mac():
             self._battery_bar.set_level(level)
+            if level is not None:
+                self._battery_chart.add_point(level)
         if level is None:
             self.statusBar().showMessage(
                 f"{mac}: no expone bateria GATT estandar (protocolo propietario)"
@@ -503,6 +542,50 @@ class MainWindow(QMainWindow):
     def _on_device_connected(self, mac: str, success: bool) -> None:
         if success:
             self.statusBar().showMessage(f"Conectado a {mac}, leyendo GATT...")
+
+    # ==================================================================
+    # Fingerprinting y diagnostico automatico
+    # ==================================================================
+    def _on_fingerprint_clicked(self) -> None:
+        mac = self._selected_mac()
+        if mac:
+            self._fingerprint_button.setEnabled(False)
+            self.statusBar().showMessage(f"Capturando fingerprint de {mac}...")
+            self.app.ble_engine.request_fingerprint(mac)
+
+    def _on_fingerprint_ready(self, mac: str, fingerprint: dict) -> None:
+        self._fingerprint_button.setEnabled(self._selected_mac() is not None)
+        codecs = ", ".join(fingerprint.get("codecs", [])) or "desconocidos"
+        services = len(fingerprint.get("services", []))
+        mtu = fingerprint.get("mtu") or "--"
+        self.statusBar().showMessage(
+            f"Fingerprint {mac}: {services} servicios GATT, MTU {mtu}, "
+            f"codecs probables: {codecs}"
+        )
+
+    def _on_diagnose_clicked(self) -> None:
+        mac = self._selected_mac()
+        device = self.app.state.device_by_mac(mac) if mac else None
+        if device is None:
+            self.statusBar().showMessage("El dispositivo ya no esta visible")
+            return
+        self._diagnose_button.setEnabled(False)
+        # Referencia viva en self: evita que Qt recoja el runner a mitad.
+        self._diag_runner = DiagnosticRunner(self.app, device, parent=self)
+        self._diag_runner.progress.connect(self.statusBar().showMessage)
+        self._diag_runner.finished.connect(self._on_diagnose_finished)
+        self._diag_runner.start()
+
+    def _on_diagnose_finished(self, report: dict) -> None:
+        self._diagnose_button.setEnabled(self._selected_mac() is not None)
+        path = report.get("report_path")
+        if path:
+            self.statusBar().showMessage(f"Diagnostico completado - reporte: {path}")
+        else:
+            self.statusBar().showMessage(
+                "Diagnostico completado (no se pudo generar el reporte, ver Logs)"
+            )
+        logger.info("Diagnostico finalizado para %s", report.get("device", {}).get("mac"))
 
     def _on_engine_error(self, message: str) -> None:
         self._battery_button.setEnabled(self._selected_mac() is not None)

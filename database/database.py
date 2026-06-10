@@ -36,6 +36,9 @@ EXPORT_TABLES = (
     "battery_history",
     "power_history",
     "latency_history",
+    "device_capabilities",
+    "ble_events",
+    "charge_history",
     "logs",
 )
 
@@ -80,6 +83,37 @@ CREATE TABLE IF NOT EXISTS latency_history (
     timestamp      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS device_capabilities (
+    mac               TEXT PRIMARY KEY,
+    name              TEXT,
+    manufacturer_data TEXT,   -- JSON {company_id_hex: payload_hex}
+    uuids             TEXT,   -- JSON lista de UUIDs anunciados
+    services          TEXT,   -- JSON inventario GATT completo
+    mtu               INTEGER,
+    avg_rssi          REAL,
+    codecs            TEXT,   -- JSON codecs probables
+    updated_at        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ble_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    mac       TEXT,
+    event_type TEXT NOT NULL,  -- disconnected | connect_failed | rssi_jump | out_of_range
+    detail    TEXT,
+    timestamp TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS charge_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source       TEXT,        -- medidor de origen (UM25C, FNB58, ...)
+    voltage_v    REAL,
+    current_a    REAL,
+    power_w      REAL,
+    capacity_mah REAL,
+    temp_c       REAL,
+    timestamp    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS logs (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     level     TEXT NOT NULL,
@@ -89,6 +123,7 @@ CREATE TABLE IF NOT EXISTS logs (
 
 CREATE INDEX IF NOT EXISTS idx_scan_mac ON scan_history (mac);
 CREATE INDEX IF NOT EXISTS idx_battery_mac ON battery_history (mac);
+CREATE INDEX IF NOT EXISTS idx_ble_events_mac ON ble_events (mac);
 """
 
 
@@ -180,6 +215,91 @@ class DatabaseManager:
                 )
         except sqlite3.Error as exc:
             logger.error("Error guardando latencia: %s", exc)
+
+    def save_fingerprint(self, fingerprint: dict) -> None:
+        """Persiste/actualiza las capacidades GATT de un dispositivo."""
+        try:
+            with self._conn:
+                self._conn.execute(
+                    """INSERT INTO device_capabilities
+                       (mac, name, manufacturer_data, uuids, services, mtu,
+                        avg_rssi, codecs, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(mac) DO UPDATE SET
+                           name = excluded.name,
+                           manufacturer_data = excluded.manufacturer_data,
+                           uuids = excluded.uuids,
+                           services = excluded.services,
+                           mtu = excluded.mtu,
+                           avg_rssi = excluded.avg_rssi,
+                           codecs = excluded.codecs,
+                           updated_at = excluded.updated_at""",
+                    (
+                        fingerprint["mac"],
+                        fingerprint.get("name"),
+                        json.dumps(fingerprint.get("manufacturer_data", {})),
+                        json.dumps(fingerprint.get("uuids", [])),
+                        json.dumps(fingerprint.get("services", [])),
+                        fingerprint.get("mtu"),
+                        fingerprint.get("avg_rssi"),
+                        json.dumps(fingerprint.get("codecs", [])),
+                        _now(),
+                    ),
+                )
+        except sqlite3.Error as exc:
+            logger.error("Error guardando fingerprint: %s", exc)
+
+    def get_fingerprint(self, mac: str) -> dict | None:
+        """Capacidades guardadas de un dispositivo (JSON deserializado)."""
+        try:
+            row = self._conn.execute(
+                "SELECT * FROM device_capabilities WHERE mac = ?", (mac,)
+            ).fetchone()
+            if row is None:
+                return None
+            columns = [d[0] for d in self._conn.execute(
+                "SELECT * FROM device_capabilities LIMIT 0"
+            ).description]
+            data = dict(zip(columns, row))
+            for key in ("manufacturer_data", "uuids", "services", "codecs"):
+                if data.get(key):
+                    data[key] = json.loads(data[key])
+            return data
+        except (sqlite3.Error, json.JSONDecodeError) as exc:
+            logger.error("Error leyendo fingerprint: %s", exc)
+            return None
+
+    def save_ble_event(self, mac: str, event_type: str, detail: str) -> None:
+        """Logging BLE: desconexiones, saltos RSSI, dispositivos perdidos."""
+        try:
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO ble_events (mac, event_type, detail, timestamp) VALUES (?, ?, ?, ?)",
+                    (mac, event_type, detail, _now()),
+                )
+        except sqlite3.Error as exc:
+            logger.error("Error guardando evento BLE: %s", exc)
+
+    def save_charge_sample(
+        self,
+        source: str,
+        voltage_v: float | None,
+        current_a: float | None,
+        power_w: float | None,
+        capacity_mah: float | None = None,
+        temp_c: float | None = None,
+    ) -> None:
+        """Muestra de un medidor USB (curvas de carga)."""
+        try:
+            with self._conn:
+                self._conn.execute(
+                    """INSERT INTO charge_history
+                       (source, voltage_v, current_a, power_w, capacity_mah, temp_c, timestamp)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (source, voltage_v, current_a, power_w, capacity_mah, temp_c, _now()),
+                )
+        except sqlite3.Error as exc:
+            logger.error("Error guardando muestra de carga: %s", exc)
 
     def save_log(self, level: str, message: str) -> None:
         """save_log(): persiste un evento tecnico en la tabla logs."""

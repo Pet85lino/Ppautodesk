@@ -3,12 +3,39 @@
 Suite tecnica multiplataforma de diagnostico para auriculares Bluetooth TWS
 (True Wireless Stereo): Maxell, JBL, Xiaomi, Samsung, Sony y genericos.
 
-## Version actual: V1.1 (0.2.0)
+## Version actual: V1.2 (0.3.0)
 
 ### Bluetooth BLE
 - Escaneo BLE (`bleak`) con auto-refresh cada 5 segundos
-- Nombre, MAC, RSSI y fabricante (Company ID) de cada dispositivo
+- Nombre, MAC, RSSI, fabricante (Company ID) y UUIDs anunciados
 - Lectura de bateria via GATT Battery Service (0x180F / 0x2A19)
+- Fingerprinting: servicios GATT completos, MTU, manufacturer data,
+  RSSI promedio y codecs probables -> tabla `device_capabilities`
+- Deteccion de codecs (heuristica): SBC, AAC, aptX, LDAC segun
+  fabricante y UUIDs (Windows limita la negociacion real)
+- Logging BLE persistente: desconexiones, fallos de conexion, saltos
+  de RSSI (>=15 dB) y dispositivos fuera de rango -> tabla `ble_events`
+
+### Diagnostico automatico
+- Boton "Diagnosticar auriculares": pipeline bateria GATT -> RMS L/R ->
+  latencia -> jitter -> analitica historica -> reporte tecnico
+- Reporte PDF multipagina (resumen + graficas de bateria/RSSI) con
+  diagnostico final; fallback HTML sin matplotlib
+
+### Analitica
+- Salud de bateria: pico reciente vs pico historico (degradacion %)
+- Estabilidad de enlace 0-100: varianza RSSI + eventos BLE + jitter
+- Estadisticas RSSI historicas por dispositivo
+
+### Tiempo real
+- Graficas live en el dashboard (QPainter, sin dependencias):
+  RSSI live y bateria live del dispositivo seleccionado
+- Estado central `AppState` + bus de eventos pub/sub (`EventBus`)
+
+### Medidores USB (experimental)
+- Lector RDTech UM24C/UM25C por puerto serie (voltaje, corriente,
+  potencia, mAh, temperatura) -> tabla `charge_history`
+- FNB58 / TC66C planificados para V2 (requieren hardware)
 
 ### Audio
 - Seleccion explicita del dispositivo de salida (solo outputs listados)
@@ -58,12 +85,15 @@ python main.py
 LINO_AUDIO_DIAGNOSTIC/
 ├── main.py              # punto de entrada
 ├── config.json          # configuracion (intervalos, BD, UI)
-├── core/                # app_manager, config, logger
-├── ble/                 # motor BLE, lecturas GATT, parser
-├── audio/               # tests de tono, balance y latencia
-├── usb/                 # monitoreo energetico
-├── database/            # persistencia SQLite
-├── ui/                  # dashboard, temas, widgets
+├── core/                # app_manager, config_manager, app_state,
+│                        # event_bus, analytics, diagnostics,
+│                        # report_generator, logger
+├── ble/                 # motor BLE, lecturas GATT, parser/codecs
+├── audio/               # tonos, ruido, sweep, RMS, latencia DSP
+├── usb/                 # monitoreo energetico + medidores USB
+├── database/            # persistencia SQLite (9 tablas)
+├── ui/                  # dashboard, temas, widgets, graficas live
+├── exports/             # reportes PDF y exportaciones JSON/CSV
 ├── logs/                # logs rotativos
 └── tests/               # pruebas unitarias
 ```

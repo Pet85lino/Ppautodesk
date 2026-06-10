@@ -6,14 +6,18 @@ Componentes visuales reutilizables del dashboard.
     * GlassPanel       -> contenedor con efecto vidrio (glassmorphism).
     * BatteryIndicator -> barra de bateria con color segun nivel.
     * StatCard         -> tarjeta de metrica (titulo + valor grande).
+    * LiveChart        -> grafica de linea en tiempo real (QPainter puro,
+                          sin dependencias: RSSI live, bateria live...).
     * LogConsole       -> consola de logs integrada en la UI.
 """
 
 from __future__ import annotations
 
 import logging
+from collections import deque
 
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject, QPointF
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -85,6 +89,76 @@ class StatCard(GlassPanel):
 
     def set_value(self, value: str) -> None:
         self._value.setText(value)
+
+
+class LiveChart(QFrame):
+    """Grafica de linea en tiempo real, ligera (QPainter, sin matplotlib).
+
+    Pensada para series que se actualizan cada pocos segundos: RSSI live,
+    bateria live, latencia live. Mantiene una ventana deslizante de
+    `max_points` muestras.
+    """
+
+    def __init__(self, title: str, unit: str = "", color: str = "#00E5FF",
+                 max_points: int = 60, parent=None):
+        super().__init__(parent)
+        self.setObjectName("glassPanel")
+        self.setMinimumHeight(110)
+        self._title = title
+        self._unit = unit
+        self._color = QColor(color)
+        self._points: deque[float] = deque(maxlen=max_points)
+
+    def add_point(self, value: float) -> None:
+        """Agrega una muestra y repinta (llamar desde el hilo de la UI)."""
+        self._points.append(float(value))
+        self.update()
+
+    def set_series(self, values) -> None:
+        """Reemplaza la serie completa (cambio de dispositivo seleccionado)."""
+        self._points = deque(values, maxlen=self._points.maxlen)
+        self.update()
+
+    def clear(self) -> None:
+        self._points.clear()
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802 (API Qt)
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        margin = 10
+        w = self.width() - 2 * margin
+        h = self.height() - 2 * margin - 16  # espacio para el titulo
+
+        # Titulo + ultimo valor.
+        painter.setPen(QColor("#7A8BA3"))
+        last = f"{self._points[-1]:.0f}{self._unit}" if self._points else "--"
+        painter.drawText(margin, margin + 10, f"{self._title}: {last}")
+
+        if len(self._points) < 2 or w <= 0 or h <= 0:
+            painter.end()
+            return
+
+        lo, hi = min(self._points), max(self._points)
+        span = (hi - lo) or 1.0  # serie plana: evitar division por cero
+        step = w / (self._points.maxlen - 1)
+
+        polygon = QPolygonF()
+        for i, value in enumerate(self._points):
+            x = margin + i * step
+            y = margin + 16 + h - ((value - lo) / span) * h
+            polygon.append(QPointF(x, y))
+
+        pen = QPen(self._color, 1.6)
+        painter.setPen(pen)
+        painter.drawPolyline(polygon)
+
+        # Punto final destacado.
+        painter.setBrush(self._color)
+        painter.drawEllipse(polygon.last(), 3, 3)
+        painter.end()
 
 
 class _LogBridge(QObject):

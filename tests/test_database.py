@@ -90,14 +90,47 @@ class DatabaseManagerTest(unittest.TestCase):
         self.assertEqual(len(payload["tables"]["battery_history"]), 1)
 
         csv_paths = self.db.export_csv(out_dir)
-        self.assertEqual(len(csv_paths), 6)  # una por tabla
+        from database.database import EXPORT_TABLES
+
+        self.assertEqual(len(csv_paths), len(EXPORT_TABLES))  # una por tabla
+
+    def test_fingerprint_roundtrip(self) -> None:
+        fingerprint = {
+            "mac": "AA:BB:CC:DD:EE:09",
+            "name": "TWS-Test",
+            "manufacturer_data": {"0x004C": "0215aabb"},
+            "uuids": ["0000180f-0000-1000-8000-00805f9b34fb"],
+            "services": [{"uuid": "180f", "name": "Battery Service"}],
+            "mtu": 247,
+            "avg_rssi": -55.5,
+            "codecs": ["SBC", "AAC"],
+        }
+        self.db.save_fingerprint(fingerprint)
+        stored = self.db.get_fingerprint("AA:BB:CC:DD:EE:09")
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored["mtu"], 247)
+        self.assertEqual(stored["codecs"], ["SBC", "AAC"])
+        self.assertEqual(stored["uuids"], fingerprint["uuids"])
+
+        # Upsert: actualizar no debe duplicar.
+        fingerprint["mtu"] = 185
+        self.db.save_fingerprint(fingerprint)
+        self.assertEqual(self.db.get_fingerprint("AA:BB:CC:DD:EE:09")["mtu"], 185)
+
+    def test_ble_events_and_charge(self) -> None:
+        self.db.save_ble_event("AA:BB:CC:DD:EE:01", "disconnected", "test")
+        self.db.save_charge_sample("UM25C", 5.12, 0.45, 2.3, capacity_mah=120.0)
+        _, events = self.db._dump_table("ble_events")
+        _, charges = self.db._dump_table("charge_history")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(charges), 1)
 
 
 class ConfigTest(unittest.TestCase):
     def test_defaults_when_file_missing(self) -> None:
-        from core.config import Config
+        from core.config_manager import ConfigManager
 
-        cfg = Config.load(Path("/ruta/inexistente/config.json"))
+        cfg = ConfigManager.load(Path("/ruta/inexistente/config.json"))
         self.assertEqual(cfg.get("scan.auto_refresh_ms"), 5000)
         self.assertEqual(cfg.get("clave.inexistente", "x"), "x")
 

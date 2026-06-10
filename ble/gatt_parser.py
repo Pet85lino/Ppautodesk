@@ -66,6 +66,49 @@ def manufacturer_from_adv(manufacturer_data: dict[int, bytes]) -> str:
     return "Desconocido"
 
 
+# ----------------------------------------------------------------------
+# Deteccion de codecs (heuristica probabilistica)
+# ----------------------------------------------------------------------
+# Los codecs A2DP se negocian a nivel de Bluetooth Classic y Windows no
+# expone la negociacion via BLE, asi que la deteccion se infiere de
+# fabricante + UUIDs anunciados. SBC es obligatorio en A2DP (siempre
+# presente); el resto se marca como "probable" segun el ecosistema.
+CODEC_RULES: list[tuple[str, list[str]]] = [
+    ("Apple", ["AAC"]),
+    ("Samsung", ["AAC", "Scalable (SSC)"]),
+    ("Sony", ["AAC", "LDAC"]),
+    ("Harman (JBL)", ["AAC"]),
+    ("Qualcomm", ["aptX", "aptX HD"]),
+    ("Xiaomi", ["AAC"]),
+    ("Xiaomi (Anhui Huami)", ["AAC"]),
+]
+
+GOOGLE_FAST_PAIR_UUID = "0000fe2c-0000-1000-8000-00805f9b34fb"
+
+
+def infer_codecs(manufacturer: str, uuids: list[str]) -> list[str]:
+    """Codecs probables del dispositivo (heuristica, no negociacion real).
+
+    SBC siempre esta presente (obligatorio en A2DP). El resto se infiere
+    del fabricante y de UUIDs de servicios anunciados. Windows limita el
+    acceso a la negociacion real del codec, por lo que el resultado se
+    etiqueta como probable.
+    """
+    codecs = ["SBC"]
+    for vendor, vendor_codecs in CODEC_RULES:
+        if vendor.lower() in manufacturer.lower():
+            codecs.extend(vendor_codecs)
+            break
+
+    lowered = [u.lower() for u in uuids]
+    # Fast Pair => ecosistema Android moderno: AAC casi seguro, aptX comun.
+    if GOOGLE_FAST_PAIR_UUID in lowered:
+        for codec in ("AAC", "aptX"):
+            if codec not in codecs:
+                codecs.append(codec)
+    return codecs
+
+
 def service_name(uuid: str) -> str:
     """Nombre legible de un servicio GATT, o el UUID si es desconocido."""
     return KNOWN_SERVICES.get(uuid.lower(), uuid)
