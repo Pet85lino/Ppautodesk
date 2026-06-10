@@ -1,0 +1,27 @@
+# LINO Audio Diagnostic - Dependencias
+# Python 3.12+
+
+# Motor Bluetooth BLE multiplataforma (Windows / Linux / macOS)
+bleak
+
+# Interfaz grafica (Qt for Python)
+PySide6
+
+# Analisis numerico y de senal (audio, latencia, degradacion)
+numpy
+scipy
+
+# Captura y reproduccion de audio (tests de latencia y balance L/R)
+sounddevice
+
+# Graficas tecnicas (historial de bateria, respuesta en frecuencia)
+matplotlib
+
+# Comunicacion serie (diagnostico USB avanzado, V2+)
+pyserial
+
+# Monitoreo de energia y sistema (carga USB, bateria del equipo)
+psutil
+
+# Exportaciones CSV y manejo de historiales
+pandas

@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Datos locales generados por la app
+*.db
+logs/*.log*
+
+# IDEs
+.idea/
+.vscode/
