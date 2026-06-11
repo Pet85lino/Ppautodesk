@@ -24,6 +24,7 @@ import time
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -42,10 +43,22 @@ from PySide6.QtWidgets import (
 
 from audio import audio_test, latency_test, mic_profile
 from ble.ble_scanner import DeviceInfo
+from ble.system_devices import (
+    STATUS_CONNECTED,
+    STATUS_NEARBY,
+    STATUS_PAIRED,
+    list_system_bluetooth_devices,
+    merge_with_scan,
+)
 from core.app_manager import AppManager
 from core.config_manager import PROJECT_ROOT
 from core.diagnostics import DiagnosticRunner
-from ui.themes import DARK_GLASS_QSS
+from ui.themes import (
+    DARK_GLASS_QSS,
+    STATUS_CONNECTED_COLOR,
+    STATUS_NEARBY_COLOR,
+    STATUS_PAIRED_COLOR,
+)
 from ui.widgets import BatteryIndicator, GlassPanel, LiveChart, LogConsole, StatCard
 from usb.usb_monitor import PowerStatus, check_alerts, get_power_status, list_serial_ports
 
@@ -57,6 +70,17 @@ EXPORTS_DIR = PROJECT_ROOT / "exports"
 # Persistir energia cada N ticks de auto-refresh (5 s * 12 = 1 min).
 POWER_PERSIST_EVERY_TICKS = 12
 
+# Consultar al SO los dispositivos emparejados cada N ticks (5 s * 3 = 15 s);
+# la consulta PowerShell tarda ~1-2 s y corre en hilo aparte.
+SYSTEM_DEVICES_EVERY_TICKS = 3
+
+# Presentacion de cada estado: (texto, color).
+STATUS_PRESENTATION = {
+    STATUS_CONNECTED: ("Conectado", STATUS_CONNECTED_COLOR),
+    STATUS_PAIRED: ("Emparejado", STATUS_PAIRED_COLOR),
+    STATUS_NEARBY: ("Cercano (BLE)", STATUS_NEARBY_COLOR),
+}
+
 
 class MainWindow(QMainWindow):
     """Dashboard principal de la suite."""
@@ -66,12 +90,16 @@ class MainWindow(QMainWindow):
     audio_status = Signal(str)
     latency_measured = Signal(object)  # dict con la medicion para SQLite
     lab_status = Signal(str)           # resultados del modo laboratorio
+    system_devices_ready = Signal(list)  # dispositivos BT del SO (hilo aparte)
 
     def __init__(self, app: AppManager):
         super().__init__()
         self.app = app
         self._battery_levels: dict[str, int | None] = {}  # cache mac -> nivel
         self._devices: list[DeviceInfo] = []
+        self._system_devices: list = []   # SystemDevice del SO (Windows/Linux)
+        self._rows: list[dict] = []       # filas combinadas de la tabla
+        self._sys_refreshing = False
         self._last_power: PowerStatus | None = None
         self._last_power_time = time.monotonic()
         self._power_ticks = 0
@@ -96,8 +124,9 @@ class MainWindow(QMainWindow):
         self._refresh_timer.timeout.connect(self._on_auto_refresh)
         self._refresh_timer.start()
 
-        # Primer escaneo inmediato al abrir la app.
+        # Primer escaneo inmediato al abrir la app + dispositivos del SO.
         QTimer.singleShot(300, self.app.ble_engine.request_scan)
+        QTimer.singleShot(100, self._refresh_system_devices)
 
     # ==================================================================
     # Construccion de la interfaz
@@ -201,9 +230,9 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self._scan_button)
         table_layout.addLayout(header_row)
 
-        self._table = QTableWidget(0, 5)
+        self._table = QTableWidget(0, 6)
         self._table.setHorizontalHeaderLabels(
-            ["Nombre", "MAC", "RSSI (dBm)", "Fabricante", "Bateria"]
+            ["Estado", "Nombre", "MAC", "RSSI (dBm)", "Fabricante", "Bateria"]
         )
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
@@ -485,29 +514,50 @@ class MainWindow(QMainWindow):
         self.audio_status.connect(self._on_audio_status)
         self.latency_measured.connect(self._on_latency_measured)
         self.lab_status.connect(self._append_lab_output)
+        self.system_devices_ready.connect(self._on_system_devices)
 
     # ==================================================================
     # Logica de actualizacion
     # ==================================================================
     def update_dashboard(self, devices: list[DeviceInfo]) -> None:
-        """update_dashboard(): refresca tabla y metricas tras cada escaneo."""
-        self._devices = devices
+        """update_dashboard(): refresca tabla y metricas tras cada escaneo.
 
+        La tabla combina dos fuentes: dispositivos del SO (conectados y
+        emparejados con Windows) y dispositivos que anuncian BLE cerca.
+        Orden: Conectado -> Emparejado -> Cercano (BLE).
+        """
+        self._devices = devices
         selected_mac = self._selected_mac()
-        self._table.setRowCount(len(devices))
-        for row, dev in enumerate(devices):
-            battery = self._battery_levels.get(dev.mac)
-            battery_text = f"{battery}%" if battery is not None else "--"
-            values = [dev.name, dev.mac, str(dev.rssi), dev.manufacturer, battery_text]
+        self._rows = merge_with_scan(self._system_devices, devices)
+
+        self._table.setRowCount(len(self._rows))
+        for row, info in enumerate(self._rows):
+            status_text, status_color = STATUS_PRESENTATION[info["status"]]
+            battery = self._battery_levels.get(info["mac"])
+            values = [
+                status_text,
+                info["name"],
+                info["mac"],
+                str(info["rssi"]) if info["rssi"] is not None else "--",
+                info["manufacturer"] or "--",
+                f"{battery}%" if battery is not None else "--",
+            ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Columna Estado coloreada; el resto atenuado para los
+                # que solo se ven por BLE (foco en lo conectado).
+                if col == 0:
+                    item.setForeground(QColor(status_color))
+                elif info["status"] == STATUS_NEARBY:
+                    item.setForeground(QColor(STATUS_NEARBY_COLOR))
                 self._table.setItem(row, col, item)
             # Mantener seleccion tras el auto-refresh.
-            if dev.mac == selected_mac:
+            if info["mac"] == selected_mac:
                 self._table.selectRow(row)
 
-        self._card_found.set_value(str(len(devices)))
+        connected = sum(1 for r in self._rows if r["status"] == STATUS_CONNECTED)
+        self._card_found.set_value(f"{connected} con. / {len(self._rows)} tot.")
         self._card_known.set_value(str(self.app.database.known_devices_count()))
         self._card_last_scan.set_value(datetime.now().strftime("%H:%M:%S"))
 
@@ -515,14 +565,41 @@ class MainWindow(QMainWindow):
         if selected_mac:
             self._rssi_chart.set_series(self.app.state.rssi_history.get(selected_mac, []))
         self.statusBar().showMessage(
-            f"Escaneo completado: {len(devices)} dispositivo(s) | "
+            f"{connected} conectado(s), {len(devices)} anunciando BLE | "
             f"auto-refresh cada {self._refresh_timer.interval() // 1000} s"
         )
 
+    # ------------------------------------------------------------------
+    # Dispositivos Bluetooth del sistema operativo
+    # ------------------------------------------------------------------
+    def _refresh_system_devices(self) -> None:
+        """Consulta al SO en un hilo (PowerShell tarda ~1-2 s)."""
+        if self._sys_refreshing:
+            return
+        self._sys_refreshing = True
+
+        def worker():
+            try:
+                result = list_system_bluetooth_devices()
+            except Exception as exc:  # noqa: BLE001 - frontera de hilo
+                logger.error("Error consultando dispositivos del SO: %s", exc)
+                result = []
+            self.system_devices_ready.emit(result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_system_devices(self, devices: list) -> None:
+        self._sys_refreshing = False
+        self._system_devices = devices
+        # Re-renderizar la tabla con el ultimo escaneo BLE conocido.
+        self.update_dashboard(self._devices)
+
     def _on_auto_refresh(self) -> None:
-        """Tick del temporizador: nuevo escaneo + estado de energia."""
+        """Tick del temporizador: nuevo escaneo + energia + SO."""
         self.app.ble_engine.request_scan()
         self._update_power()
+        if self._power_ticks % SYSTEM_DEVICES_EVERY_TICKS == 0:
+            self._refresh_system_devices()
 
     def _update_power(self) -> None:
         """Refresca energia, evalua alertas y persiste cada minuto."""
@@ -568,25 +645,30 @@ class MainWindow(QMainWindow):
     # ==================================================================
     # Seleccion y bateria BLE
     # ==================================================================
-    def _selected_mac(self) -> str | None:
+    def _selected_row(self) -> dict | None:
         row = self._table.currentRow()
-        if 0 <= row < len(self._devices):
-            return self._devices[row].mac
+        if 0 <= row < len(self._rows):
+            return self._rows[row]
         return None
 
+    def _selected_mac(self) -> str | None:
+        info = self._selected_row()
+        return info["mac"] if info else None
+
     def _on_selection_changed(self) -> None:
-        mac = self._selected_mac()
+        info = self._selected_row()
+        mac = info["mac"] if info else None
         self.app.state.select(mac)
         for btn in (self._battery_button, self._fingerprint_button, self._diagnose_button):
             btn.setEnabled(mac is not None)
-        if mac is None:
+        if info is None:
             self._selected_label.setText("Selecciona un dispositivo")
             self._battery_bar.set_unknown()
             self._rssi_chart.clear()
             self._battery_chart.clear()
             return
-        device = self._devices[self._table.currentRow()]
-        self._selected_label.setText(f"{device.name}  ({device.mac})")
+        status_text, _ = STATUS_PRESENTATION[info["status"]]
+        self._selected_label.setText(f"{info['name']}  ({info['mac']}) - {status_text}")
         self._battery_bar.set_level(self._battery_levels.get(mac))
         # Cargar las series live acumuladas en AppState para esta MAC.
         self._rssi_chart.set_series(self.app.state.rssi_history.get(mac, []))
@@ -641,11 +723,20 @@ class MainWindow(QMainWindow):
         )
 
     def _on_diagnose_clicked(self) -> None:
-        mac = self._selected_mac()
-        device = self.app.state.device_by_mac(mac) if mac else None
-        if device is None:
-            self.statusBar().showMessage("El dispositivo ya no esta visible")
+        info = self._selected_row()
+        if info is None:
+            self.statusBar().showMessage("Selecciona un dispositivo")
             return
+        device = info["device"] or self.app.state.device_by_mac(info["mac"])
+        if device is None:
+            # Dispositivo del SO que no anuncia BLE (conectado por
+            # Bluetooth Classic): se diagnostica igual con su MAC.
+            device = DeviceInfo(
+                name=info["name"],
+                mac=info["mac"],
+                rssi=info["rssi"] if info["rssi"] is not None else -127,
+                manufacturer=info["manufacturer"],
+            )
         self._diagnose_button.setEnabled(False)
         # Referencia viva en self: evita que Qt recoja el runner a mitad.
         self._diag_runner = DiagnosticRunner(self.app, device, parent=self)

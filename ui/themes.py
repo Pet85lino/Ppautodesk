@@ -25,6 +25,11 @@ BATTERY_GOOD = "#2EE6A8"   # > 50 %
 BATTERY_WARN = "#FFC94D"   # 20-50 %
 BATTERY_LOW = "#FF2E97"    # < 20 %
 
+# Colores de estado de dispositivos (tabla del dashboard).
+STATUS_CONNECTED_COLOR = "#2EE6A8"   # conectado a Windows
+STATUS_PAIRED_COLOR = "#FFC94D"      # emparejado, no conectado
+STATUS_NEARBY_COLOR = "#7A8BA3"      # solo visible por BLE
+
 # ----------------------------------------------------------------------
 # Hoja de estilos global (QSS)
 # ----------------------------------------------------------------------
@@ -138,6 +143,73 @@ QProgressBar {{
 QProgressBar::chunk {{
     border-radius: 7px;
     background-color: {BATTERY_GOOD};
+}}
+
+/* ------- Desplegables (QComboBox) -------
+   Sin esto, Windows pinta la lista emergente con su estilo nativo
+   claro y el texto queda blanco sobre blanco (ilegible). */
+QComboBox {{
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid {GLASS_BORDER};
+    border-radius: 8px;
+    padding: 6px 28px 6px 10px;
+    color: {TEXT_PRIMARY};
+}}
+QComboBox:hover {{
+    border-color: {ACCENT_DIM};
+}}
+QComboBox:focus {{
+    border-color: {ACCENT};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 24px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid {ACCENT};
+    margin-right: 8px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: #0E1A30;
+    border: 1px solid {ACCENT_DIM};
+    border-radius: 8px;
+    color: {TEXT_PRIMARY};
+    padding: 4px;
+    outline: none;
+    selection-background-color: rgba(0, 229, 255, 0.25);
+    selection-color: #FFFFFF;
+}}
+QComboBox QAbstractItemView::item {{
+    min-height: 26px;
+    padding: 4px 8px;
+    color: {TEXT_PRIMARY};
+}}
+QComboBox QAbstractItemView::item:hover {{
+    background-color: rgba(0, 229, 255, 0.15);
+    color: #FFFFFF;
+}}
+
+/* ------- Tooltips y menus (mismo problema de estilo nativo) ------- */
+QToolTip {{
+    background-color: #0E1A30;
+    color: {TEXT_PRIMARY};
+    border: 1px solid {ACCENT_DIM};
+    border-radius: 6px;
+    padding: 6px 8px;
+}}
+QMenu {{
+    background-color: #0E1A30;
+    color: {TEXT_PRIMARY};
+    border: 1px solid {GLASS_BORDER};
+    border-radius: 8px;
+    padding: 4px;
+}}
+QMenu::item:selected {{
+    background-color: rgba(0, 229, 255, 0.2);
+    color: #FFFFFF;
 }}
 
 /* ------- Consola de logs ------- */
