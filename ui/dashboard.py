@@ -60,7 +60,15 @@ from ui.themes import (
     STATUS_PAIRED_COLOR,
 )
 from ui.widgets import BatteryIndicator, GlassPanel, LiveChart, LogConsole, StatCard
-from usb.usb_monitor import PowerStatus, check_alerts, get_power_status, list_serial_ports
+from usb.charge_recorder import ChargeRecorder
+from usb.usb_monitor import (
+    PowerStatus,
+    check_alerts,
+    diff_usb_devices,
+    get_power_status,
+    list_serial_ports,
+    list_usb_devices,
+)
 
 logger = logging.getLogger("lino.ui.dashboard")
 
@@ -91,6 +99,7 @@ class MainWindow(QMainWindow):
     latency_measured = Signal(object)  # dict con la medicion para SQLite
     lab_status = Signal(str)           # resultados del modo laboratorio
     system_devices_ready = Signal(list)  # dispositivos BT del SO (hilo aparte)
+    usb_scan_ready = Signal(object)       # {devices, ports} del escaneo USB
 
     def __init__(self, app: AppManager):
         super().__init__()
@@ -100,6 +109,9 @@ class MainWindow(QMainWindow):
         self._system_devices: list = []   # SystemDevice del SO (Windows/Linux)
         self._rows: list[dict] = []       # filas combinadas de la tabla
         self._sys_refreshing = False
+        self._usb_devices: list[str] = []
+        self._usb_scanning = False
+        self._charge_recorder: ChargeRecorder | None = None
         self._last_power: PowerStatus | None = None
         self._last_power_time = time.monotonic()
         self._power_ticks = 0
@@ -127,6 +139,8 @@ class MainWindow(QMainWindow):
         # Primer escaneo inmediato al abrir la app + dispositivos del SO.
         QTimer.singleShot(300, self.app.ble_engine.request_scan)
         QTimer.singleShot(100, self._refresh_system_devices)
+        QTimer.singleShot(200, self._update_power)       # cargando/descargando ya
+        QTimer.singleShot(400, self._refresh_usb_devices)
 
     # ==================================================================
     # Construccion de la interfaz
@@ -382,43 +396,73 @@ class MainWindow(QMainWindow):
         return page
 
     def _build_power_page(self) -> QWidget:
-        """Energia del host + medidores USB detectados."""
+        """Energia del host + escaneo USB + conexion de medidores."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(14)
 
-        panel = GlassPanel()
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(16, 16, 16, 16)
-
+        # --- Energia del equipo (cargando/descargando) ---
+        power_panel = GlassPanel()
+        power_layout = QVBoxLayout(power_panel)
+        power_layout.setContentsMargins(16, 14, 16, 14)
         title = QLabel("Energia del sistema")
         title.setObjectName("sectionTitle")
-        panel_layout.addWidget(title)
-
+        power_layout.addWidget(title)
         self._power_label = QLabel("Consultando...")
-        panel_layout.addWidget(self._power_label)
+        power_layout.addWidget(self._power_label)
+        layout.addWidget(power_panel)
 
-        meters_title = QLabel("Medidores USB / puertos serie")
-        meters_title.setObjectName("sectionTitle")
-        panel_layout.addWidget(meters_title)
+        # --- Dispositivos USB presentes (escaneo activo) ---
+        usb_panel = GlassPanel()
+        usb_layout = QVBoxLayout(usb_panel)
+        usb_layout.setContentsMargins(16, 14, 16, 14)
 
-        self._meters_label = QLabel("Buscando puertos serie...")
-        self._meters_label.setObjectName("mutedText")
-        self._meters_label.setWordWrap(True)
-        panel_layout.addWidget(self._meters_label)
+        usb_header = QHBoxLayout()
+        usb_title = QLabel("Dispositivos USB conectados")
+        usb_title.setObjectName("sectionTitle")
+        usb_header.addWidget(usb_title)
+        usb_header.addStretch()
+        self._usb_scan_button = QPushButton("Escanear USB")
+        self._usb_scan_button.clicked.connect(self._refresh_usb_devices)
+        usb_header.addWidget(self._usb_scan_button)
+        usb_layout.addLayout(usb_header)
 
-        note = QLabel(
-            "El historial energetico se guarda en SQLite cada minuto. "
-            "V2: lectura de voltaje/corriente/mAh de medidores UM25C, "
-            "FNB58, TC66C y AT34."
+        self._usb_label = QLabel("Pulsa 'Escanear USB' o espera al auto-escaneo")
+        self._usb_label.setObjectName("mutedText")
+        self._usb_label.setWordWrap(True)
+        usb_layout.addWidget(self._usb_label)
+        layout.addWidget(usb_panel)
+
+        # --- Medidores USB: establecer conexion serie ---
+        meter_panel = GlassPanel()
+        meter_layout = QVBoxLayout(meter_panel)
+        meter_layout.setContentsMargins(16, 14, 16, 14)
+
+        meter_title = QLabel("Medidor USB (curvas de carga)")
+        meter_title.setObjectName("sectionTitle")
+        meter_layout.addWidget(meter_title)
+
+        meter_row = QHBoxLayout()
+        meter_row.addWidget(QLabel("Puerto:"))
+        self._meter_combo = QComboBox()
+        self._meter_combo.setMinimumWidth(280)
+        meter_row.addWidget(self._meter_combo, stretch=1)
+        self._meter_connect_btn = QPushButton("Conectar medidor")
+        self._meter_connect_btn.clicked.connect(self._on_meter_connect)
+        meter_row.addWidget(self._meter_connect_btn)
+        meter_layout.addLayout(meter_row)
+
+        self._meter_label = QLabel(
+            "Sin medidor conectado. Compatible: UM25C/UM24C (FNB58 y "
+            "TC66C en V2). Las muestras van a charge_history."
         )
-        note.setObjectName("mutedText")
-        note.setWordWrap(True)
-        panel_layout.addWidget(note)
-        panel_layout.addStretch()
+        self._meter_label.setObjectName("mutedText")
+        self._meter_label.setWordWrap(True)
+        meter_layout.addWidget(self._meter_label)
+        layout.addWidget(meter_panel)
 
-        layout.addWidget(panel)
+        layout.addStretch()
         return page
 
     def _build_lab_page(self) -> QWidget:
@@ -515,6 +559,7 @@ class MainWindow(QMainWindow):
         self.latency_measured.connect(self._on_latency_measured)
         self.lab_status.connect(self._append_lab_output)
         self.system_devices_ready.connect(self._on_system_devices)
+        self.usb_scan_ready.connect(self._on_usb_scan)
 
     # ==================================================================
     # Logica de actualizacion
@@ -534,13 +579,19 @@ class MainWindow(QMainWindow):
         for row, info in enumerate(self._rows):
             status_text, status_color = STATUS_PRESENTATION[info["status"]]
             battery = self._battery_levels.get(info["mac"])
+            if battery is not None:
+                battery_text = f"{battery}%"            # lectura GATT propia
+            elif info.get("battery") is not None:
+                battery_text = f"{info['battery']}%"    # HFP via Windows
+            else:
+                battery_text = "--"
             values = [
                 status_text,
                 info["name"],
                 info["mac"],
                 str(info["rssi"]) if info["rssi"] is not None else "--",
                 info["manufacturer"] or "--",
-                f"{battery}%" if battery is not None else "--",
+                battery_text,
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
@@ -600,6 +651,7 @@ class MainWindow(QMainWindow):
         self._update_power()
         if self._power_ticks % SYSTEM_DEVICES_EVERY_TICKS == 0:
             self._refresh_system_devices()
+            self._refresh_usb_devices()
 
     def _update_power(self) -> None:
         """Refresca energia, evalua alertas y persiste cada minuto."""
@@ -616,14 +668,111 @@ class MainWindow(QMainWindow):
         if self._power_ticks % POWER_PERSIST_EVERY_TICKS == 1:  # primer tick y cada minuto
             self.app.database.save_power(status.percent, status.plugged)
 
-        ports = list_serial_ports()
-        if ports:
-            self._meters_label.setText("\n".join(p.format() for p in ports))
-        else:
-            self._meters_label.setText("Sin puertos serie detectados")
-
         self._last_power = status
         self._last_power_time = now
+
+    # ==================================================================
+    # USB: escaneo de dispositivos y conexion de medidores
+    # ==================================================================
+    def _refresh_usb_devices(self) -> None:
+        """Escanea el bus USB en un hilo (PowerShell tarda ~1 s)."""
+        if self._usb_scanning:
+            return
+        self._usb_scanning = True
+        self._usb_label.setText("Escaneando USB...")
+        self.statusBar().showMessage("Escaneando USB...")
+
+        def worker():
+            try:
+                devices = list_usb_devices()
+                ports = list_serial_ports()
+            except Exception as exc:  # noqa: BLE001 - frontera de hilo
+                logger.error("Error escaneando USB: %s", exc)
+                devices, ports = [], []
+            self.usb_scan_ready.emit({"devices": devices, "ports": ports})
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_usb_scan(self, result: dict) -> None:
+        self._usb_scanning = False
+        devices: list[str] = result["devices"]
+        ports = result["ports"]
+
+        # Eventos conectado/desconectado entre escaneos consecutivos.
+        added, removed = diff_usb_devices(self._usb_devices, devices)
+        for name in added:
+            self.app.database.save_log("INFO", f"USB conectado: {name}")
+            self.statusBar().showMessage(f"USB conectado: {name}")
+        for name in removed:
+            self.app.database.save_log("INFO", f"USB desconectado: {name}")
+            self.statusBar().showMessage(f"USB desconectado: {name}")
+        self._usb_devices = devices
+
+        if devices:
+            self._usb_label.setText("\n".join(f"- {n}" for n in devices))
+        else:
+            self._usb_label.setText("Sin dispositivos USB relevantes detectados")
+
+        # Combo de puertos para conectar el medidor (conserva seleccion).
+        current = self._meter_combo.currentData()
+        self._meter_combo.blockSignals(True)
+        self._meter_combo.clear()
+        for port in ports:
+            self._meter_combo.addItem(port.format(), (port.device, port.meter_model))
+        self._meter_combo.blockSignals(False)
+        if current is not None:
+            idx = self._meter_combo.findData(current)
+            if idx >= 0:
+                self._meter_combo.setCurrentIndex(idx)
+        if not ports:
+            self._meter_combo.addItem("(sin puertos serie)", None)
+
+    def _on_meter_connect(self) -> None:
+        """Establece (o corta) la conexion serie con el medidor USB."""
+        if self._charge_recorder is not None:
+            self._charge_recorder.stop()
+            self._charge_recorder = None
+            self._meter_connect_btn.setText("Conectar medidor")
+            self._meter_label.setText("Medidor desconectado")
+            self.statusBar().showMessage("Medidor USB desconectado")
+            return
+
+        data = self._meter_combo.currentData()
+        if not data:
+            self._meter_label.setText("Selecciona un puerto serie valido")
+            return
+        port, meter_model = data
+        model = meter_model or "RDTech UM25C"
+
+        self._charge_recorder = ChargeRecorder(port, model, interval_s=2.0)
+        self._charge_recorder.sample_ready.connect(self._on_meter_sample)
+        self._charge_recorder.overheat.connect(self._on_meter_overheat)
+        self._charge_recorder.recorder_error.connect(self._on_meter_error)
+        self._charge_recorder.start()
+
+        self._meter_connect_btn.setText("Detener medidor")
+        self._meter_label.setText(f"Conectando a {model} en {port}...")
+        self.statusBar().showMessage(f"Conectando medidor en {port}...")
+
+    def _on_meter_sample(self, sample) -> None:
+        self.app.database.save_charge_sample(
+            sample.source, sample.voltage_v, sample.current_a,
+            sample.power_w, sample.capacity_mah, sample.temp_c,
+        )
+        self._meter_label.setText(f"{sample.source}: {sample.format()}")
+
+    def _on_meter_overheat(self, temp_c: float) -> None:
+        message = f"ALERTA: sobrecalentamiento en carga ({temp_c:.0f} C)"
+        self.app.database.save_log("ALERTA", message)
+        self.statusBar().showMessage(message)
+
+    def _on_meter_error(self, message: str) -> None:
+        self._meter_label.setText(message)
+        self.statusBar().showMessage(message)
+        if self._charge_recorder is not None:
+            self._charge_recorder.stop()
+            self._charge_recorder = None
+        self._meter_connect_btn.setText("Conectar medidor")
 
     # ==================================================================
     # Exportaciones
@@ -669,7 +818,10 @@ class MainWindow(QMainWindow):
             return
         status_text, _ = STATUS_PRESENTATION[info["status"]]
         self._selected_label.setText(f"{info['name']}  ({info['mac']}) - {status_text}")
-        self._battery_bar.set_level(self._battery_levels.get(mac))
+        level = self._battery_levels.get(mac)
+        if level is None:
+            level = info.get("battery")  # % HFP reportado por Windows
+        self._battery_bar.set_level(level)
         # Cargar las series live acumuladas en AppState para esta MAC.
         self._rssi_chart.set_series(self.app.state.rssi_history.get(mac, []))
         self._battery_chart.set_series(self.app.state.battery_history_live.get(mac, []))
@@ -1065,6 +1217,8 @@ class MainWindow(QMainWindow):
     # ==================================================================
     def closeEvent(self, event) -> None:
         self._refresh_timer.stop()
+        if self._charge_recorder is not None:
+            self._charge_recorder.stop()
         self._log_console.detach()
         self.app.shutdown()
         event.accept()

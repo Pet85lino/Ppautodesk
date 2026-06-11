@@ -82,6 +82,57 @@ class ParsePnpTest(unittest.TestCase):
     def test_invalid_json_returns_empty(self) -> None:
         self.assertEqual(parse_pnp_devices("no es json"), [])
 
+    def test_isconnected_overrides_status_ok(self) -> None:
+        # CASO REAL reportado: emparejado sin conectar tambien tiene
+        # Status OK; la propiedad IsConnected=False debe mandar.
+        payload = json.dumps([
+            {
+                "FriendlyName": "A12 pro",
+                "Status": "OK",
+                "InstanceId": "BTHENUM\\DEV_AAAAAAAAAAAA\\8&1",
+                "IsConnected": False,
+                "Battery": None,
+            },
+            {
+                "FriendlyName": "MAXELL DYNAMIC+",
+                "Status": "OK",
+                "InstanceId": "BTHENUM\\DEV_BBBBBBBBBBBB\\8&2",
+                "IsConnected": True,
+                "Battery": 50,
+            },
+        ])
+        by_mac = {d.mac: d for d in parse_pnp_devices(payload)}
+        self.assertFalse(by_mac["AA:AA:AA:AA:AA:AA"].connected)  # emparejado
+        self.assertTrue(by_mac["BB:BB:BB:BB:BB:BB"].connected)   # conectado
+        self.assertEqual(by_mac["BB:BB:BB:BB:BB:BB"].battery, 50)
+        self.assertIsNone(by_mac["AA:AA:AA:AA:AA:AA"].battery)
+
+    def test_isconnected_as_string(self) -> None:
+        # ConvertTo-Json puede serializar el bool como cadena.
+        payload = json.dumps({
+            "FriendlyName": "TWS",
+            "Status": "Unknown",
+            "InstanceId": "BTHENUM\\DEV_CCCCCCCCCCCC\\8&3",
+            "IsConnected": "True",
+            "Battery": "77",
+        })
+        device = parse_pnp_devices(payload)[0]
+        self.assertTrue(device.connected)
+        self.assertEqual(device.battery, 77)
+
+    def test_battery_clamped_and_invalid_ignored(self) -> None:
+        payload = json.dumps([
+            {"FriendlyName": "X", "Status": "OK",
+             "InstanceId": "BTHENUM\\DEV_DDDDDDDDDDDD\\1",
+             "IsConnected": True, "Battery": 150},
+            {"FriendlyName": "Y", "Status": "OK",
+             "InstanceId": "BTHENUM\\DEV_EEEEEEEEEEEE\\1",
+             "IsConnected": True, "Battery": "no-numero"},
+        ])
+        by_mac = {d.mac: d for d in parse_pnp_devices(payload)}
+        self.assertEqual(by_mac["DD:DD:DD:DD:DD:DD"].battery, 100)  # clamp
+        self.assertIsNone(by_mac["EE:EE:EE:EE:EE:EE"].battery)
+
 
 class MergeTest(unittest.TestCase):
     def test_order_connected_paired_nearby(self) -> None:
@@ -120,6 +171,29 @@ class MergeTest(unittest.TestCase):
         ]
         rows = merge_with_scan([], scanned)
         self.assertEqual([r["name"] for r in rows], ["Cercano", "Lejano"])
+
+    def test_system_battery_propagated_to_row(self) -> None:
+        system = [SystemDevice("MAXELL", "AA:BB:CC:DD:EE:FF",
+                               connected=True, battery=50)]
+        rows = merge_with_scan(system, [])
+        self.assertEqual(rows[0]["battery"], 50)
+
+
+class UsbDiffTest(unittest.TestCase):
+    def test_added_and_removed(self) -> None:
+        from usb.usb_monitor import diff_usb_devices
+
+        added, removed = diff_usb_devices(
+            ["Mouse USB", "Medidor UM25C"],
+            ["Mouse USB", "Case TWS"],
+        )
+        self.assertEqual(added, ["Case TWS"])
+        self.assertEqual(removed, ["Medidor UM25C"])
+
+    def test_no_changes(self) -> None:
+        from usb.usb_monitor import diff_usb_devices
+
+        self.assertEqual(diff_usb_devices(["A"], ["A"]), ([], []))
 
 
 if __name__ == "__main__":

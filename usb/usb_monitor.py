@@ -17,6 +17,8 @@ obtener voltaje, corriente, potencia y mAh reales del case.
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -138,6 +140,72 @@ def list_serial_ports() -> list[SerialPortInfo]:
     except OSError as exc:
         logger.error("Error enumerando puertos serie: %s", exc)
     return ports
+
+
+# ----------------------------------------------------------------------
+# Escaneo de dispositivos USB conectados al equipo
+# ----------------------------------------------------------------------
+# Entradas genericas del bus que no aportan al diagnostico.
+_USB_NOISE = (
+    "root hub", "host controller", "concentrador", "generic usb hub",
+    "composite device", "dispositivo compuesto",
+)
+
+_USB_TIMEOUT_S = 10
+
+
+def list_usb_devices() -> list[str]:
+    """Dispositivos USB presentes (nombres legibles, sin hubs/raices).
+
+    Windows: Get-PnpDevice -Class USB -PresentOnly.
+    Linux:   lsusb.
+    Llamar desde un hilo de trabajo (PowerShell tarda ~1 s).
+    """
+    names: list[str] = []
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                [
+                    "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                    "Get-PnpDevice -Class USB -PresentOnly | "
+                    "Select-Object -ExpandProperty FriendlyName",
+                ],
+                capture_output=True, text=True, timeout=_USB_TIMEOUT_S,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        elif sys.platform.startswith("linux"):
+            result = subprocess.run(
+                ["lsusb"], capture_output=True, text=True, timeout=_USB_TIMEOUT_S,
+            )
+            # "Bus 001 Device 002: ID 1d6b:0003 Linux Foundation 3.0 hub"
+            names = [
+                line.split(":", 1)[1].split(" ", 3)[-1].strip()
+                for line in result.stdout.splitlines()
+                if ":" in line
+            ]
+    except (OSError, subprocess.TimeoutExpired, IndexError) as exc:
+        logger.error("Error escaneando USB: %s", exc)
+        return []
+
+    filtered = [
+        n for n in names if not any(noise in n.lower() for noise in _USB_NOISE)
+    ]
+    logger.info("USB: %d dispositivo(s) presentes", len(filtered))
+    return sorted(set(filtered))
+
+
+def diff_usb_devices(
+    previous: list[str], current: list[str]
+) -> tuple[list[str], list[str]]:
+    """Cambios entre dos escaneos USB consecutivos.
+
+    Returns:
+        (conectados, desconectados) — base de los mensajes en vivo
+        "USB conectado: X" / "USB desconectado: X".
+    """
+    prev_set, curr_set = set(previous), set(current)
+    return sorted(curr_set - prev_set), sorted(prev_set - curr_set)
 
 
 def check_alerts(

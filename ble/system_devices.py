@@ -32,12 +32,29 @@ logger = logging.getLogger("lino.ble.system")
 # MAC embebida en el InstanceId de Windows: BTHENUM\DEV_AABBCCDDEEFF...
 _DEV_MAC_RE = re.compile(r"DEV_([0-9A-F]{12})", re.IGNORECASE)
 
+# Propiedades PnP de Windows (claves DEVPKEY documentadas por la comunidad):
+#   IsConnected -> conexion REAL actual (Status OK solo significa que el
+#                  nodo PnP esta sano: los emparejados sin conectar
+#                  tambien reportan OK, de ahi la clasificacion erronea).
+#   Battery     -> porcentaje que Windows obtiene via HFP del auricular
+#                  (el mismo 50% que muestra la pagina de Configuracion).
+_PROP_IS_CONNECTED = "{83DA6326-97A6-4088-9453-A1923F573B29} 15"
+_PROP_BATTERY = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2"
+
 _PS_COMMAND = (
-    "Get-PnpDevice -Class Bluetooth | "
-    "Select-Object FriendlyName,Status,InstanceId | ConvertTo-Json -Compress"
+    "$devs = Get-PnpDevice -Class Bluetooth | "
+    "Where-Object { $_.InstanceId -match 'DEV_' }; "
+    "$out = foreach ($d in $devs) { "
+    f"$c = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName '{_PROP_IS_CONNECTED}' "
+    "-ErrorAction SilentlyContinue).Data; "
+    f"$b = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName '{_PROP_BATTERY}' "
+    "-ErrorAction SilentlyContinue).Data; "
+    "[PSCustomObject]@{ FriendlyName=$d.FriendlyName; Status=$d.Status; "
+    "InstanceId=$d.InstanceId; IsConnected=$c; Battery=$b } }; "
+    "ConvertTo-Json -InputObject @($out) -Compress"
 )
 
-_SUBPROCESS_TIMEOUT_S = 8
+_SUBPROCESS_TIMEOUT_S = 15
 
 
 @dataclass
@@ -45,8 +62,9 @@ class SystemDevice:
     """Dispositivo Bluetooth registrado en el sistema operativo."""
 
     name: str
-    mac: str          # formato AA:BB:CC:DD:EE:FF
-    connected: bool   # True = presente/conectado ahora mismo
+    mac: str                    # formato AA:BB:CC:DD:EE:FF
+    connected: bool             # True = conectado AHORA (propiedad PnP)
+    battery: int | None = None  # % reportado por Windows via HFP
 
 
 def _format_mac(raw12: str) -> str:
@@ -58,13 +76,16 @@ def _format_mac(raw12: str) -> str:
 def parse_pnp_devices(json_text: str) -> list[SystemDevice]:
     """Interpreta la salida JSON de Get-PnpDevice (funcion pura, testeable).
 
-    Notas del formato:
-        * ConvertTo-Json devuelve un OBJETO (no lista) si hay un solo
-          dispositivo: se normaliza a lista.
-        * Cada dispositivo fisico aparece varias veces (servicios hijos
-          BTHENUM\\{uuid}...): se deduplica por MAC, marcando conectado
-          si CUALQUIER instancia reporta Status OK y prefiriendo el
-          nombre de la entrada raiz (BTHENUM\\DEV_... o BTHLE\\DEV_...).
+    Reglas:
+        * ConvertTo-Json devuelve un OBJETO (no lista) con un solo
+          resultado: se normaliza a lista.
+        * Cada fisico aparece varias veces (servicios hijos): se
+          deduplica por MAC, prefiriendo el nombre de la entrada raiz.
+        * Conexion: la propiedad IsConnected es la fuente de verdad
+          (True/False). Solo si NINGUNA instancia la reporta se usa el
+          fallback historico Status == OK (Windows antiguos).
+        * Bateria: primer valor no nulo de la propiedad Battery (es el
+          mismo porcentaje HFP que muestra Configuracion de Windows).
     """
     try:
         data = json.loads(json_text)
@@ -76,8 +97,8 @@ def parse_pnp_devices(json_text: str) -> list[SystemDevice]:
     if not isinstance(data, list):
         return []
 
-    by_mac: dict[str, SystemDevice] = {}
-    root_named: set[str] = set()
+    # Acumuladores por MAC.
+    info: dict[str, dict] = {}
     for entry in data:
         if not isinstance(entry, dict):
             continue
@@ -86,23 +107,47 @@ def parse_pnp_devices(json_text: str) -> list[SystemDevice]:
         if not match:
             continue
         mac = _format_mac(match.group(1))
-        name = str(entry.get("FriendlyName") or "(sin nombre)").strip()
-        connected = str(entry.get("Status") or "").upper() == "OK"
-        is_root = instance_id.upper().startswith(("BTHENUM\\DEV_", "BTHLE\\DEV_"))
+        acc = info.setdefault(mac, {
+            "name": None, "root_named": False,
+            "is_connected": None, "status_ok": False, "battery": None,
+        })
 
-        existing = by_mac.get(mac)
-        if existing is None:
-            by_mac[mac] = SystemDevice(name=name, mac=mac, connected=connected)
-            if is_root:
-                root_named.add(mac)
-        else:
-            existing.connected = existing.connected or connected
-            # El nombre raiz es el legible ("MAXELL DYNAMC+"); los hijos
-            # suelen llamarse "...Avrcp Transport" y similares.
-            if is_root and mac not in root_named:
-                existing.name = name
-                root_named.add(mac)
-    return list(by_mac.values())
+        name = str(entry.get("FriendlyName") or "").strip()
+        is_root = instance_id.upper().startswith(("BTHENUM\\DEV_", "BTHLE\\DEV_"))
+        if name and (acc["name"] is None or (is_root and not acc["root_named"])):
+            acc["name"] = name
+            acc["root_named"] = acc["root_named"] or is_root
+
+        acc["status_ok"] = acc["status_ok"] or (
+            str(entry.get("Status") or "").upper() == "OK"
+        )
+
+        raw_conn = entry.get("IsConnected")
+        if raw_conn is not None:
+            conn = str(raw_conn).strip().lower() in ("true", "1")
+            acc["is_connected"] = bool(acc["is_connected"]) or conn
+
+        raw_batt = entry.get("Battery")
+        if acc["battery"] is None and raw_batt is not None:
+            try:
+                acc["battery"] = max(0, min(100, int(raw_batt)))
+            except (TypeError, ValueError):
+                pass
+
+    devices: list[SystemDevice] = []
+    for mac, acc in info.items():
+        connected = (
+            acc["is_connected"]
+            if acc["is_connected"] is not None
+            else acc["status_ok"]  # fallback para Windows sin la propiedad
+        )
+        devices.append(SystemDevice(
+            name=acc["name"] or "(sin nombre)",
+            mac=mac,
+            connected=bool(connected),
+            battery=acc["battery"],
+        ))
+    return devices
 
 
 def _list_windows() -> list[SystemDevice]:
@@ -197,6 +242,7 @@ def merge_with_scan(system_devices: list[SystemDevice], scanned: list) -> list[d
             "rssi": ble.rssi if ble else None,
             "manufacturer": ble.manufacturer if ble else None,
             "status": STATUS_CONNECTED if sys_dev.connected else STATUS_PAIRED,
+            "battery": sys_dev.battery,  # % HFP reportado por Windows
             "device": ble,
         })
 
@@ -209,6 +255,7 @@ def merge_with_scan(system_devices: list[SystemDevice], scanned: list) -> list[d
             "rssi": dev.rssi,
             "manufacturer": dev.manufacturer,
             "status": STATUS_NEARBY,
+            "battery": None,
             "device": dev,
         })
 
