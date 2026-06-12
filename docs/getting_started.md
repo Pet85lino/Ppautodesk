@@ -159,6 +159,7 @@ Deberias ver `OK` con 86 tests. No requieren Bluetooth ni audio.
 | `sounddevice no disponible` | `pip install sounddevice`; en Linux instala ademas PortAudio (`sudo apt install libportaudio2`) |
 | Bateria siempre "N/D" | Ese TWS no expone el Battery Service estandar (limitacion del fabricante, no de la app) |
 | La app no abre en Linux sin escritorio | Qt necesita pantalla; para probar sin GUI: `QT_QPA_PLATFORM=offscreen python main.py` |
+| Conecto el case por USB-C al PC y "no conecta" | Es normal: el USB-C del case solo tiene pines de carga (sin lineas de datos). Windows no enumera nada y NINGUN software puede leer bateria por ese cable. Auriculares -> bateria por Bluetooth; carga del case -> medidor USB en linea (UM25C) entre cargador y case |
 | Auto-refresh se vuelve lento | El watchdog detecto fallos del adaptador y escalo el intervalo; se restaura solo al recuperarse |
 
 ## 11. Configuracion rapida (config.json)

@@ -432,6 +432,19 @@ class MainWindow(QMainWindow):
         self._usb_label.setObjectName("mutedText")
         self._usb_label.setWordWrap(True)
         usb_layout.addWidget(self._usb_label)
+
+        usb_note = QLabel(
+            "NOTA: el USB-C del case de un TWS normal SOLO tiene pines de "
+            "energia (carga); no expone datos, asi que no aparecera aqui "
+            "ni puede leerse su bateria por cable. La bateria de los "
+            "auriculares se lee por Bluetooth (columna Bateria del "
+            "Dashboard) y la carga del case se mide con un medidor USB "
+            "en linea (cargador -> medidor -> case), abajo."
+        )
+        usb_note.setObjectName("mutedText")
+        usb_note.setWordWrap(True)
+        usb_note.setStyleSheet("color: #FFC94D;")
+        usb_layout.addWidget(usb_note)
         layout.addWidget(usb_panel)
 
         # --- Medidores USB: establecer conexion serie ---
