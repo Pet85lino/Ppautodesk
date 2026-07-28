@@ -1,0 +1,25 @@
+# Patrones de busqueda para TelegramRegexSearch
+# ---------------------------------------------
+# - Un patron regex por linea.
+# - Las lineas que empiezan con # son comentarios y se ignoran.
+# - Las lineas vacias se ignoran.
+#
+# Puedes ponerle nombre a un patron (el nombre da nombre al archivo de
+# resultados) con la sintaxis:
+#
+#     nombre_del_patron :: regex
+#
+# Sin nombre, se usa "patron_<numero_de_linea>".
+#
+# Para que un patron concreto ignore mayusculas y minusculas, ponle el
+# prefijo (?i). Para que lo hagan todos, cambia "ignorar_mayusculas": true
+# en config.json.
+#
+# Los ejemplos de abajo son solo eso: borralos y pon los tuyos.
+
+correos :: [a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+urls :: https?://[^\s]+
+telefonos :: \+?\d[\d\s().-]{7,}\d
+menciones :: @[A-Za-z0-9_]{4,}
+tarjetas :: \b(?:\d[ -]?){13,16}\b
+importes :: (?i)\d+(?:[.,]\d{1,2})?\s?(?:eur|euros?|usd|dolares?|\$)

@@ -1,0 +1,26 @@
+# Credenciales: NUNCA deben subirse al repositorio.
+credenciales.json
+
+# Datos personales y salidas de cada ejecución.
+datos/*
+!datos/.gitkeep
+resultados/*
+!resultados/.gitkeep
+logs/*
+!logs/.gitkeep
+cache/*
+!cache/.gitkeep
+
+# Configuración local generada en la primera ejecución.
+config.json
+
+# Artefactos de Python.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Sesiones de MTProto (contienen tokens de acceso a tu cuenta).
+*.session
+*.session-journal

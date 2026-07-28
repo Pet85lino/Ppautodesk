@@ -1,0 +1,5 @@
+{
+    "_comentario": "Copia este archivo como 'credenciales.json' y rellena tus datos de my.telegram.org. NO hace falta para analizar exports ya descargados: solo lo usa la descarga en vivo por MTProto. 'credenciales.json' esta en .gitignore para que nunca se suba al repositorio.",
+    "api_id": 0,
+    "api_hash": ""
+}
