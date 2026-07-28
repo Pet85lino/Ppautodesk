@@ -474,6 +474,14 @@ progreso y la conversión de mensajes del descargador.
 **Verificado por medición:** el consumo de memoria (48,6 MB de entrada →
 1,26 MB de pico), con recuento de mensajes idéntico al del método anterior.
 
+**Verificado en dispositivo:** ejecución real en Pydroid 3 sobre Android, con
+el proyecto en `/storage/emulated/0/QPYTHON/TelegramRegexSearch`. Arranca sin
+instalar ningún paquete, crea `config.json` y las cuatro carpetas, resuelve
+las rutas de Android, carga y compila los patrones, escribe ambos archivos de
+log y termina con un código de salida limpio. Con la carpeta de datos vacía
+informa del problema con precisión en lugar de fallar de forma oscura, que es
+el comportamiento buscado.
+
 **No verificado — y por qué:**
 
 - **La conexión real por MTProto.** Autenticarse requiere el código que
@@ -484,13 +492,12 @@ progreso y la conversión de mensajes del descargador.
   (`test_el_archivo_generado_lo_lee_el_parser_del_proyecto`). Las llamadas a
   Telethon están escritas contra su API documentada, pero no ejecutadas
   contra el servidor.
-- **Pydroid 3 sobre Android real.** Las restricciones conocidas están
-  contempladas en el diseño (sin dependencias externas, ancho de terminal
-  adaptativo, límite de descriptores, memoria acotada), y las pruebas se
-  ejecutan sobre CPython 3.11 en Linux, pero no sobre un dispositivo físico.
 - **Exports de Telegram reales.** Las pruebas usan exports sintéticos
   construidos según el formato documentado, incluyendo los dos casos que
   fallaban antes (chat suelto y cuenta completa).
+- **Rendimiento en Android con un historial grande.** La medición de memoria
+  se hizo sobre CPython 3.11 en Linux; solo puede confirmarse en el
+  dispositivo con datos reales del usuario.
 
 ---
 

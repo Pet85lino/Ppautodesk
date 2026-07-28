@@ -41,9 +41,31 @@ python main.py
 La primera ejecución crea `config.json` y las carpetas `datos/`,
 `resultados/`, `logs/` y `cache/` si no existen.
 
-**Pydroid 3:** copia la carpeta al almacenamiento del dispositivo, abre
-`main.py` desde la app y pulsa el botón de ejecutar. No hace falta instalar
-ningún paquete desde el gestor de pip.
+### Pydroid 3 (Android)
+
+Copia la carpeta al almacenamiento del dispositivo, abre `main.py` desde la
+app y pulsa el botón de ejecutar. **No hace falta instalar ningún paquete**
+desde el gestor de pip.
+
+Si la dejas en la ubicación habitual de Pydroid, las rutas quedan así:
+
+```
+/storage/emulated/0/QPYTHON/TelegramRegexSearch/
+```
+
+que en cualquier explorador de archivos verás como:
+
+```
+Almacenamiento interno/QPYTHON/TelegramRegexSearch/
+```
+
+Los exports van en la subcarpeta `datos/` de esa ruta.
+
+> **Ojo:** Telegram para Android **no puede exportar historiales** — esa
+> opción solo existe en Telegram Desktop. Para analizar desde el móvil tienes
+> dos caminos: exportar en un PC y copiar el `result.json` a `datos/`, o
+> instalar `telethon` desde el gestor de pip de Pydroid y usar
+> [`--descargar`](#descarga-en-vivo-opcional), que sí funciona en Android.
 
 ---
 
@@ -479,7 +501,15 @@ lugar de reventar con `UnicodeEncodeError`.
 **"No hay archivos que analizar"** — Los exports deben estar dentro de
 `datos/` (o de la carpeta que indiques con `--datos`) y tener extensión
 `.json`. Para HTML, añade `".html"` a `extensiones_soportadas` en
-`config.json`.
+`config.json`. El mensaje incluye la ruta exacta donde está buscando: cópiala
+tal cual en tu explorador de archivos para comprobar dónde debe ir el export.
+
+**Cargó menos patrones de los que escribí** — Si `patrones.txt` viaja entre
+Windows y Android por ciertos medios puede perder los saltos de línea y
+quedar todo en una sola línea, que se interpretaría como un único patrón.
+El log dice cuántos cargó (`Patrones cargados: N válidos`): si el número no
+cuadra con tus líneas, ábrelo en un editor y comprueba que cada patrón está
+en su propia línea.
 
 **"No hay ningún patrón válido"** — `patrones.txt` está vacío o todas sus
 líneas son comentarios. Mira `logs/error.log` para ver si algún patrón no
