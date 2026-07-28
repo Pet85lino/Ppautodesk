@@ -1,0 +1,8 @@
+# Paquetes generados para su entrega: su contenido ya está versionado como
+# código fuente, así que subir el binario duplicaría el repositorio y se
+# quedaría desactualizado en cuanto cambie cualquier archivo.
+*.zip
+
+# Artefactos de Python.
+__pycache__/
+*.py[cod]
