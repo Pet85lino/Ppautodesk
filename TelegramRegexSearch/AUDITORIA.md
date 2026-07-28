@@ -4,14 +4,14 @@ Revisión completa del código previo, corrección de los defectos encontrados y
 verificación de que las correcciones funcionan.
 
 - **Defectos corregidos:** 20
-- **Pruebas automatizadas:** 197 (196 ejecutadas, 1 omitida por requerir Telethon)
+- **Pruebas automatizadas:** 214 (213 ejecutadas, 1 omitida por requerir Telethon)
 - **Resultado:** todas en verde
 
 ```
 $ python ejecutar_tests.py
-Ran 197 tests in 0.13s
+Ran 214 tests in 0.16s
 OK (skipped=1)
-Resumen: 197 pruebas | 0 fallos | 0 errores | 1 omitidas
+Resumen: 214 pruebas | 0 fallos | 0 errores | 1 omitidas
 ```
 
 ---
@@ -486,12 +486,23 @@ el comportamiento buscado.
 
 - **La conexión real por MTProto.** Autenticarse requiere el código que
   Telegram envía al teléfono del titular de la cuenta, que no es algo que
-  pueda completarse de forma automatizada. Lo que sí está probado es la
-  frontera que importa: que el archivo generado por el descargador lo lee el
-  parser del proyecto sin ningún caso especial
-  (`test_el_archivo_generado_lo_lee_el_parser_del_proyecto`). Las llamadas a
-  Telethon están escritas contra su API documentada, pero no ejecutadas
-  contra el servidor.
+  pueda completarse de forma automatizada. Además, Telethon **no se pudo
+  instalar en el entorno de desarrollo**: su dependencia `pyaes` se
+  distribuye solo como código fuente y no compila con las versiones de
+  setuptools y wheel allí presentes. Las llamadas a Telethon están escritas
+  contra su API documentada, pero no ejecutadas contra el servidor.
+
+  Lo que sí está probado es todo lo que rodea a esa frontera: la lógica de
+  autenticación completa —reintentos del código, verificación en dos pasos,
+  código caducado, reutilización de la sesión— mediante dobles de prueba
+  (`tests/test_sesion.py`, 13 pruebas), y que el archivo que genera el
+  descargador lo lee el parser del proyecto sin ningún caso especial
+  (`test_el_archivo_generado_lo_lee_el_parser_del_proyecto`).
+
+  El fallo de instalación sirvió para una mejora real: `pip install` se
+  invoca ahora con `--prefer-binary`, que evita compilar cuando existe un
+  paquete precompilado. Es justo lo que hace falta en Android, donde no hay
+  compilador.
 - **Exports de Telegram reales.** Las pruebas usan exports sintéticos
   construidos según el formato documentado, incluyendo los dos casos que
   fallaban antes (chat suelto y cuenta completa).
@@ -513,5 +524,5 @@ el comportamiento buscado.
 | Límite de descriptores | Ninguno | Caché LRU |
 | Selección de grupos privados | Imposible sin el ID | Por nombre, ID o @usuario |
 | Filtrado por fechas | No existía | Ventanas múltiples en una pasada |
-| Pruebas automatizadas | 0 | 197 |
+| Pruebas automatizadas | 0 | 214 |
 | Líneas > 100 caracteres | Varias | 0 |

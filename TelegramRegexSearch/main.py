@@ -136,6 +136,14 @@ def parsear_argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "historiales a la carpeta de datos y después los analiza con normalidad.",
     )
     grupo.add_argument(
+        "--configurar",
+        action="store_true",
+        help=(
+            "Configura el acceso a Telegram paso a paso (credenciales y código "
+            "de verificación) y comprueba que funciona. Después, termina."
+        ),
+    )
+    grupo.add_argument(
         "--descargar",
         action="store_true",
         help="Descarga historiales desde Telegram antes de analizarlos.",
@@ -235,6 +243,9 @@ def ejecutar(argumentos: argparse.Namespace) -> int:
     if not verificar_entorno():
         logger.error("El entorno no cumple los requisitos mínimos. Abortando.")
         return ERROR_FATAL
+
+    if argumentos.configurar:
+        return EXITO if _configurar(argumentos, rutas) else ERROR_FATAL
 
     if argumentos.listar_chats:
         return EXITO if _listar_chats(argumentos, rutas) else ERROR_FATAL
@@ -366,6 +377,82 @@ def _parsear_fecha_argumento(texto: str | None, opcion: str) -> datetime | None:
         raise ValueError(f"{opcion} espera el formato AAAA-MM-DD y recibió '{texto}'") from None
 
 
+def _configurar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
+    """Configura el acceso a Telegram de principio a fin y comprueba que sirve.
+
+    Instala Telethon si hace falta, pide las credenciales, inicia sesión con
+    el código de verificación y confirma la conexión contando los chats
+    accesibles. Deja la sesión guardada para que las siguientes ejecuciones no
+    vuelvan a preguntar nada.
+
+    Returns:
+        ``True`` si al terminar la aplicación puede acceder a Telegram.
+    """
+    import asyncio
+
+    from core.descargador import preparar_dependencias
+    from core.sesion import ErrorAutenticacion, conectar
+    from utils.credenciales import obtener_credenciales
+
+    print(
+        "\n"
+        "==================================================\n"
+        " Asistente de configuración\n"
+        "==================================================\n"
+    )
+
+    if not preparar_dependencias(instalar=True):
+        print(
+            "\n"
+            "No se pudo instalar Telethon automáticamente. El detalle está en\n"
+            "logs/error.log. Instálalo a mano; suele ser cuestión de un minuto:\n"
+            "\n"
+            "  Pydroid 3 -> menú lateral -> Pip -> Install -> escribe 'telethon'\n"
+            "               -> Install. Usa paquetes ya compilados, así que\n"
+            "               funciona aunque pip por consola falle.\n"
+            "\n"
+            "  Windows   -> py -m pip install telethon\n"
+            "\n"
+            "Después vuelve a ejecutar: python main.py --configurar\n"
+        )
+        return False
+
+    print("Telethon disponible.")
+
+    credenciales = obtener_credenciales(rutas["base"])
+    if credenciales is None:
+        return False
+
+    async def _probar() -> int:
+        cliente = await conectar(credenciales, rutas["cache"])
+        try:
+            return sum([1 async for _ in cliente.iter_dialogs()])
+        finally:
+            await cliente.disconnect()
+
+    try:
+        total = asyncio.run(_probar())
+    except ErrorAutenticacion as exc:
+        print(f"\nNo se pudo completar el acceso: {exc}")
+        return False
+    except KeyboardInterrupt:
+        print("\nConfiguración cancelada.")
+        return False
+    except Exception as exc:  # noqa: BLE001 - se informa con claridad y se sale
+        logger.error("Error inesperado durante la configuración: %s", exc)
+        return False
+
+    print(
+        f"\nTodo listo: {total} chat(s) accesibles.\n"
+        "La sesión queda guardada, así que no volverá a pedirte el código.\n"
+        "\n"
+        "Siguientes pasos:\n"
+        "  python main.py --listar-chats --tipo grupos\n"
+        "  python main.py --descargar --tipo grupos --dias 30\n"
+    )
+    return True
+
+
 def _listar_chats(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
     """Muestra los chats accesibles para que el usuario elija cuáles analizar.
 
@@ -378,15 +465,15 @@ def _listar_chats(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> boo
     import asyncio
 
     from core.descargador import ErrorDescarga, listar_chats, preparar_dependencias
-    from utils.credenciales import cargar_credenciales
+    from utils.credenciales import obtener_credenciales
 
     if not preparar_dependencias(instalar=argumentos.instalar_dependencias):
         logger.error("Falta Telethon. Instálalo con 'pip install telethon'.")
         return False
 
-    credenciales = cargar_credenciales(rutas["base"])
+    credenciales = obtener_credenciales(rutas["base"])
     if credenciales is None:
-        logger.error("No hay credenciales configuradas; consulta el README.")
+        logger.error("Sin credenciales no se puede consultar la lista de chats.")
         return False
 
     try:
@@ -428,7 +515,7 @@ def _descargar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
     import asyncio
 
     from core.descargador import ErrorDescarga, descargar_historiales, preparar_dependencias
-    from utils.credenciales import cargar_credenciales
+    from utils.credenciales import obtener_credenciales
 
     if not preparar_dependencias(instalar=argumentos.instalar_dependencias):
         logger.error(
@@ -438,13 +525,9 @@ def _descargar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
         )
         return False
 
-    credenciales = cargar_credenciales(rutas["base"])
+    credenciales = obtener_credenciales(rutas["base"])
     if credenciales is None:
-        logger.error(
-            "No hay credenciales configuradas. Define TELEGRAM_API_ID y "
-            "TELEGRAM_API_HASH, o copia credenciales.ejemplo.json a "
-            "credenciales.json y rellénalo con tus datos de my.telegram.org."
-        )
+        logger.error("Sin credenciales no se puede descargar nada de Telegram.")
         return False
 
     try:

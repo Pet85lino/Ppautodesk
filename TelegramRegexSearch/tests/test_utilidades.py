@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import tempfile
 import unittest
 from pathlib import Path
 
 from io_utils.progress import RastreadorProgreso
-from utils.credenciales import cargar_credenciales
+from utils.credenciales import (
+    CredencialesTelegram,
+    cargar_credenciales,
+    guardar_credenciales,
+    obtener_credenciales,
+)
 from utils.dependencias import (
     Requisito,
     asegurar_paquetes,
@@ -221,3 +227,49 @@ class TestCredenciales(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGuardarCredenciales(unittest.TestCase):
+    """Verifica el guardado de credenciales introducidas por el usuario."""
+
+    def setUp(self) -> None:
+        self._directorio = tempfile.TemporaryDirectory()
+        self.base = Path(self._directorio.name)
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self) -> None:
+        logging.disable(logging.NOTSET)
+        self._directorio.cleanup()
+
+    def test_guarda_y_vuelve_a_cargar(self) -> None:
+        credenciales = CredencialesTelegram(
+            api_id=12345, api_hash="0123456789abcdef0123456789abcdef"
+        )
+        self.assertTrue(guardar_credenciales(self.base, credenciales))
+
+        recuperadas = cargar_credenciales(self.base)
+        self.assertIsNotNone(recuperadas)
+        assert recuperadas is not None
+        self.assertEqual(recuperadas.api_id, 12345)
+        self.assertEqual(recuperadas.api_hash, credenciales.api_hash)
+
+    def test_el_archivo_guardado_es_json_valido(self) -> None:
+        guardar_credenciales(
+            self.base,
+            CredencialesTelegram(api_id=1, api_hash="0123456789abcdef0123456789abcdef"),
+        )
+        datos = json.loads((self.base / "credenciales.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(datos), {"api_id", "api_hash"})
+
+    def test_no_pregunta_si_ya_hay_credenciales(self) -> None:
+        guardar_credenciales(
+            self.base,
+            CredencialesTelegram(api_id=7, api_hash="0123456789abcdef0123456789abcdef"),
+        )
+        # preguntar=False garantiza que no se intente leer de la consola.
+        credenciales = obtener_credenciales(self.base, preguntar=False)
+        assert credenciales is not None
+        self.assertEqual(credenciales.api_id, 7)
+
+    def test_sin_credenciales_y_sin_preguntar_devuelve_none(self) -> None:
+        self.assertIsNone(obtener_credenciales(self.base, preguntar=False))

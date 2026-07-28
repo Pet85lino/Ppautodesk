@@ -465,17 +465,13 @@ async def descargar_historiales(
             f"Tipo de chat desconocido: {tipo!r}. Válidos: {', '.join(TIPOS_CHAT)}"
         )
 
-    from telethon import TelegramClient
-
-    carpeta_sesion.mkdir(parents=True, exist_ok=True)
-    ruta_sesion = carpeta_sesion / "telegram"
+    from core.sesion import conectar
 
     generados: list[Path] = []
     fallidos = 0
 
-    async with TelegramClient(
-        str(ruta_sesion), credenciales.api_id, credenciales.api_hash
-    ) as cliente:
+    cliente = await conectar(credenciales, carpeta_sesion)
+    try:
         entidades = await _resolver_chats(cliente, chats, tipo)
         if not entidades:
             logger.warning("No se encontró ningún chat que descargar.")
@@ -507,6 +503,8 @@ async def descargar_historiales(
                 continue
             if ruta is not None:
                 generados.append(ruta)
+    finally:
+        await cliente.disconnect()
 
     if fallidos:
         logger.warning("Chats que no se pudieron descargar: %d. Revisa error.log.", fallidos)
@@ -574,17 +572,17 @@ async def listar_chats(
             f"Tipo de chat desconocido: {tipo!r}. Válidos: {', '.join(TIPOS_CHAT)}"
         )
 
-    from telethon import TelegramClient
+    from core.sesion import conectar
 
-    carpeta_sesion.mkdir(parents=True, exist_ok=True)
     encontrados: list[dict[str, Any]] = []
+    cliente = await conectar(credenciales, carpeta_sesion)
 
-    async with TelegramClient(
-        str(carpeta_sesion / "telegram"), credenciales.api_id, credenciales.api_hash
-    ) as cliente:
+    try:
         async for dialogo in cliente.iter_dialogs():
             if incluir_dialogo(dialogo, tipo):
                 encontrados.append(describir_dialogo(dialogo))
+    finally:
+        await cliente.disconnect()
 
     return encontrados
 

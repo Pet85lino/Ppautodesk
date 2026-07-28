@@ -211,10 +211,23 @@ def _ejecutar_pip(paquetes: list[str], tiempo_limite: int) -> bool:
     Returns:
         ``True`` si pip terminó correctamente.
     """
+    # ``--prefer-binary`` evita compilar desde el código fuente siempre que
+    # exista un paquete precompilado. En Android no hay compilador disponible,
+    # y en escritorio una compilación fallida es el motivo más frecuente de
+    # que una instalación se interrumpa.
+    #
     # ``--`` separa las opciones de los nombres de paquete: aunque la
     # validación previa ya lo impide, así ningún nombre puede interpretarse
     # como opción de pip.
-    comando = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--"]
+    comando = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--disable-pip-version-check",
+        "--prefer-binary",
+        "--",
+    ]
     comando.extend(paquetes)
 
     try:

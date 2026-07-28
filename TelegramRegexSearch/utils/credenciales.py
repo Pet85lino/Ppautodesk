@@ -111,6 +111,108 @@ def _desde_archivo(ruta: Path) -> CredencialesTelegram | None:
     )
 
 
+def guardar_credenciales(base_dir: Path, credenciales: CredencialesTelegram) -> bool:
+    """Guarda las credenciales en ``credenciales.json`` con permisos restringidos.
+
+    Args:
+        base_dir: Carpeta base del proyecto.
+        credenciales: Credenciales ya validadas.
+
+    Returns:
+        ``True`` si se pudieron guardar.
+    """
+    ruta = base_dir / _ARCHIVO_CREDENCIALES
+
+    try:
+        with ruta.open("w", encoding="utf-8") as archivo:
+            json.dump(
+                {"api_id": credenciales.api_id, "api_hash": credenciales.api_hash},
+                archivo,
+                indent=4,
+            )
+            archivo.write("\n")
+    except OSError as exc:
+        logger.error("No se pudo guardar %s: %s", _ARCHIVO_CREDENCIALES, exc)
+        return False
+
+    # En sistemas tipo Unix se restringe el acceso al propietario. En Windows
+    # y en Android la llamada no tiene efecto, pero tampoco falla.
+    try:
+        ruta.chmod(0o600)
+    except OSError:
+        pass
+
+    logger.info("Credenciales guardadas en %s", ruta.name)
+    return True
+
+
+def solicitar_credenciales(base_dir: Path) -> CredencialesTelegram | None:
+    """Pide las credenciales por consola y las guarda para próximas ejecuciones.
+
+    Se usa cuando no hay credenciales configuradas: en lugar de fallar con un
+    mensaje remitiendo a la documentación, la aplicación guía paso a paso.
+
+    Args:
+        base_dir: Carpeta base del proyecto, donde se guardará el archivo.
+
+    Returns:
+        Las credenciales introducidas, o ``None`` si no son válidas o se
+        cancela la operación.
+    """
+    print(
+        "\n"
+        "==================================================\n"
+        " Configuración de acceso a Telegram\n"
+        "==================================================\n"
+        "\n"
+        "Necesitas un api_id y un api_hash propios. Se obtienen gratis:\n"
+        "\n"
+        "  1. Entra en https://my.telegram.org desde cualquier navegador.\n"
+        "  2. Inicia sesión con tu número de teléfono.\n"
+        "  3. Pulsa 'API development tools'.\n"
+        "  4. Rellena el formulario (el nombre da igual, por ejemplo\n"
+        "     'MisBusquedas') y créala.\n"
+        "  5. Copia los valores 'App api_id' y 'App api_hash'.\n"
+        "\n"
+        "Se guardarán en credenciales.json, que está excluido del control\n"
+        "de versiones. Trata el api_hash como una contraseña.\n"
+    )
+
+    try:
+        api_id = input("App api_id: ").strip()
+        api_hash = input("App api_hash: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\nConfiguración cancelada.")
+        return None
+
+    credenciales = _validar(api_id, api_hash, origen="los datos introducidos")
+    if credenciales is None:
+        print(
+            "\nEsos datos no tienen el formato esperado: el api_id es un número\n"
+            "y el api_hash son 32 caracteres hexadecimales. Vuelve a intentarlo."
+        )
+        return None
+
+    guardar_credenciales(base_dir, credenciales)
+    return credenciales
+
+
+def obtener_credenciales(base_dir: Path, preguntar: bool = True) -> CredencialesTelegram | None:
+    """Carga las credenciales y, si no hay, las pide por consola.
+
+    Args:
+        base_dir: Carpeta base del proyecto.
+        preguntar: Si es ``True``, solicita los datos cuando no existan.
+
+    Returns:
+        Las credenciales, o ``None`` si no hay forma de obtenerlas.
+    """
+    credenciales = cargar_credenciales(base_dir)
+    if credenciales is not None:
+        return credenciales
+    return solicitar_credenciales(base_dir) if preguntar else None
+
+
 def _validar(api_id: str, api_hash: str, origen: str) -> CredencialesTelegram | None:
     """Valida el formato de las credenciales sin volcarlas nunca en el log."""
     if not api_id or not api_hash:

@@ -8,21 +8,21 @@ de Telegram exportados, en formato JSON y HTML.
 - Compatible con Windows, Linux y Pydroid 3 (Android).
 - Procesamiento en streaming: un export de 48 MB se analiza con un pico de
   **1,3 MB** de memoria.
-- 145 pruebas automatizadas incluidas.
+- 214 pruebas automatizadas incluidas.
 
 ---
 
 ## Índice
 
 1. [Instalación](#instalación)
-2. [Cómo exportar tu historial](#cómo-exportar-tu-historial-de-telegram)
+2. [Cómo conseguir los mensajes](#cómo-conseguir-los-mensajes)
 3. [Uso rápido](#uso-rápido)
 4. [Patrones](#definir-tus-patrones)
 5. [Configuración](#configuración)
 6. [Resultados](#resultados)
 7. [Logs](#logs)
 8. [Opciones de consola](#opciones-de-consola)
-9. [Descarga en vivo (opcional)](#descarga-en-vivo-opcional)
+9. [Descarga en vivo (recomendado)](#descarga-en-vivo-recomendado)
 10. [Pruebas](#ejecutar-las-pruebas)
 11. [Estructura](#estructura-del-proyecto)
 12. [Notas de diseño](#notas-de-diseño)
@@ -44,8 +44,9 @@ La primera ejecución crea `config.json` y las carpetas `datos/`,
 ### Pydroid 3 (Android)
 
 Copia la carpeta al almacenamiento del dispositivo, abre `main.py` desde la
-app y pulsa el botón de ejecutar. **No hace falta instalar ningún paquete**
-desde el gestor de pip.
+app y pulsa el botón de ejecutar. Para analizar exports **no hace falta
+instalar ningún paquete**; solo la descarga en vivo necesita Telethon, y el
+asistente se encarga de instalarlo.
 
 Si la dejas en la ubicación habitual de Pydroid, las rutas quedan así:
 
@@ -62,20 +63,51 @@ Almacenamiento interno/QPYTHON/TelegramRegexSearch/
 Los exports van en la subcarpeta `datos/` de esa ruta.
 
 > **Ojo:** Telegram para Android **no puede exportar historiales** — esa
-> opción solo existe en Telegram Desktop. Para analizar desde el móvil tienes
-> dos caminos: exportar en un PC y copiar el `result.json` a `datos/`, o
-> instalar `telethon` desde el gestor de pip de Pydroid y usar
-> [`--descargar`](#descarga-en-vivo-opcional), que sí funciona en Android.
+> opción solo existe en Telegram Desktop. Desde el móvil, usa
+> `python main.py --configurar` y después
+> [`--descargar`](#descarga-en-vivo-recomendado): la aplicación se conecta a
+> Telegram por su cuenta y no necesita ningún PC.
 
 ---
 
-## Cómo exportar tu historial de Telegram
+## Cómo conseguir los mensajes
 
-1. Abre **Telegram Desktop** (la exportación no está disponible en móvil).
+Hay dos caminos. **El primero funciona en cualquier parte y es el
+recomendado.**
+
+### Camino A: conectar con Telegram (recomendado)
+
+La aplicación se conecta a Telegram y trae los mensajes ella misma. Funciona
+en **Windows, Linux y Android (Pydroid 3)**, y no necesita ningún cliente de
+escritorio.
+
+```bash
+python main.py --configurar
+```
+
+El asistente instala lo que falte, te guía para obtener tus credenciales, te
+pide el teléfono y el código de verificación, y comprueba que todo funciona.
+Solo hay que hacerlo una vez: la sesión queda guardada.
+
+Después:
+
+```bash
+python main.py --descargar --tipo grupos --dias 30
+```
+
+Detalles completos en [Descarga en vivo](#descarga-en-vivo-recomendado).
+
+### Camino B: exportar a mano desde Telegram Desktop
+
+1. Abre **Telegram Desktop**.
 2. Menú del chat (⋮) → **Exportar historial de chat**.
    - Para todo: **Ajustes → Avanzado → Exportar datos de Telegram**.
 3. Elige el formato **JSON** (o HTML, ambos funcionan).
 4. Copia el `result.json` (o los `messages*.html`) dentro de `datos/`.
+
+> **Esta opción solo existe en Telegram Desktop.** Ni la aplicación de
+> Android ni Telegram Web tienen exportación de historiales: si la estás
+> buscando ahí, no es que no la encuentres, es que no está. Usa el camino A.
 
 Puedes poner varios exports a la vez, incluso en subcarpetas: se recorren
 todos. Funcionan tanto el export de un chat suelto como el export completo
@@ -86,9 +118,13 @@ de la cuenta con todos los chats en un solo archivo.
 ## Uso rápido
 
 ```bash
-# 1. Pon tus exports en datos/
+# 1. Consigue los mensajes (una de las dos vías de arriba)
+python main.py --configurar          # conectar con Telegram, la primera vez
+python main.py --descargar --dias 30 # traer los mensajes
+
 # 2. Edita patrones.txt con lo que quieras buscar
-# 3. Ejecuta
+
+# 3. Analiza
 python main.py
 ```
 
@@ -300,13 +336,49 @@ patrones o sin datos) · `130` interrumpido con Ctrl+C.
 
 ---
 
-## Descarga en vivo (opcional)
+## Descarga en vivo (recomendado)
 
-> Esta parte es **opcional** y es lo único que necesita un paquete externo.
-> Si no la usas, ignórala: el proyecto funciona entero sin ella.
+Trae los mensajes directamente desde Telegram, sin exportar nada a mano y sin
+depender de Telegram Desktop. Funciona en Windows, Linux y Android.
 
-En lugar de exportar a mano desde Telegram Desktop, se pueden descargar los
-historiales directamente.
+Es lo único del proyecto que necesita un paquete externo: **Telethon**. El
+asistente lo instala solo.
+
+### Configuración, una sola vez
+
+```bash
+python main.py --configurar
+```
+
+El asistente hace todo en orden:
+
+1. **Instala Telethon** si no está.
+2. **Te guía para obtener tus credenciales.** Necesitas un `api_id` y un
+   `api_hash` propios, gratuitos, desde https://my.telegram.org →
+   *API development tools*. Se abre desde cualquier navegador, también el del
+   móvil.
+3. **Te pide el teléfono** con prefijo internacional (`+34600111222`).
+4. **Te pide el código de verificación.** Llega a tu **aplicación de
+   Telegram**, no por SMS (salvo que no tengas ninguna sesión abierta).
+5. **Te pide la contraseña de dos pasos**, si tienes esa protección activada.
+6. **Comprueba que funciona** contando tus chats accesibles.
+
+Las credenciales se guardan en `credenciales.json` y la sesión en
+`cache/telegram.session`. Ambos están en `.gitignore`. **El archivo de sesión
+da acceso a tu cuenta: no lo compartas.**
+
+Si prefieres no guardar las credenciales en un archivo, puedes usar variables
+de entorno, que tienen prioridad:
+
+```bash
+# Windows (PowerShell)
+$env:TELEGRAM_API_ID="TU_API_ID"
+$env:TELEGRAM_API_HASH="TU_API_HASH"
+
+# Linux / macOS / Termux
+export TELEGRAM_API_ID="TU_API_ID"
+export TELEGRAM_API_HASH="TU_API_HASH"
+```
 
 ### Un aviso importante sobre la API
 
@@ -320,27 +392,16 @@ Sí conviene usar `--filtro` y `--consulta` para que el servidor acote lo que
 envía: descargar solo los mensajes con enlaces es mucho más rápido que
 bajarlo todo para luego aplicar un regex de URLs.
 
-### Configuración
+### Si la instalación automática falla
 
-```bash
-pip install telethon
-```
+Ocurre cuando pip intenta compilar una dependencia y el entorno no puede.
 
-Luego, las credenciales de https://my.telegram.org, **por variables de
-entorno** (recomendado):
+- **Pydroid 3:** menú lateral → *Pip* → *Install* → escribe `telethon` →
+  *Install*. Usa paquetes ya compilados, así que funciona aunque pip por
+  consola falle.
+- **Windows:** `py -m pip install telethon`
 
-```bash
-# Windows (PowerShell)
-$env:TELEGRAM_API_ID="TU_API_ID"
-$env:TELEGRAM_API_HASH="TU_API_HASH"
-
-# Linux / macOS / Termux
-export TELEGRAM_API_ID="TU_API_ID"
-export TELEGRAM_API_HASH="TU_API_HASH"
-```
-
-O copiando `credenciales.ejemplo.json` a `credenciales.json` y rellenándolo.
-Ese archivo está en `.gitignore` para que no acabe en un repositorio.
+Después vuelve a lanzar `python main.py --configurar`.
 
 ### Paso 1: ver qué grupos y canales tienes
 
@@ -379,6 +440,7 @@ python main.py --descargar --tipo grupos --filtro enlaces --limite 5000
 
 | Opción | Qué hace |
 |---|---|
+| `--configurar` | Asistente de acceso a Telegram: credenciales y código. |
 | `--descargar` | Activa la descarga previa al análisis. |
 | `--listar-chats` | Muestra los chats accesibles y termina. |
 | `--tipo TIPO` | `todos`, `grupos`, `canales` o `privados`. |
@@ -445,6 +507,8 @@ TelegramRegexSearch/
 │   ├── parser_html.py            # Normaliza mensajes desde HTML
 │   ├── regex_loader.py           # Lee y compila patrones.txt
 │   ├── search_engine.py          # Aplica los regex
+│   ├── filtro_fechas.py          # Ventanas temporales
+│   ├── sesion.py                 # Login en Telegram (opcional)
 │   └── descargador.py            # Descarga MTProto (opcional)
 ├── io_utils/
 │   ├── exportador.py             # Escribe los .txt de resultados
@@ -454,7 +518,7 @@ TelegramRegexSearch/
 │   ├── filesystem.py             # Carpetas y saneado de nombres
 │   ├── dependencias.py           # Verifica/instala requisitos
 │   └── credenciales.py           # Carga segura de credenciales
-├── tests/                        # 145 pruebas
+├── tests/                        # 214 pruebas
 ├── datos/                        # Tus exports (vacía al empezar)
 ├── resultados/                   # Salida
 ├── logs/                         # proceso.log y error.log
