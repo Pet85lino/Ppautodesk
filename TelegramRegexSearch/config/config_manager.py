@@ -16,6 +16,7 @@ import codecs
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,9 @@ CONFIG_POR_DEFECTO: dict[str, Any] = {
     "modo_busqueda": "search",
     "ignorar_mayusculas": False,
     "evitar_duplicados": True,
+    "dias_recientes": [],
+    "fecha_desde": "",
+    "fecha_hasta": "",
     "actualizar_progreso_cada_n_mensajes": 200,
     "codificacion_salida": "utf-8",
     "max_archivos_resultado_abiertos": 32,
@@ -61,6 +65,9 @@ class Configuracion:
     modo_busqueda: ModoBusqueda = "search"
     ignorar_mayusculas: bool = False
     evitar_duplicados: bool = True
+    dias_recientes: list[int] = field(default_factory=list)
+    fecha_desde: str = ""
+    fecha_hasta: str = ""
     actualizar_progreso_cada_n_mensajes: int = 200
     codificacion_salida: str = "utf-8"
     max_archivos_resultado_abiertos: int = 32
@@ -127,6 +134,9 @@ def _validar(datos: dict[str, Any]) -> Configuracion:
         modo_busqueda=_modo_busqueda(datos),
         ignorar_mayusculas=_booleano(datos, "ignorar_mayusculas"),
         evitar_duplicados=_booleano(datos, "evitar_duplicados"),
+        dias_recientes=_dias_recientes(datos),
+        fecha_desde=_fecha(datos, "fecha_desde"),
+        fecha_hasta=_fecha(datos, "fecha_hasta"),
         actualizar_progreso_cada_n_mensajes=_entero(
             datos, "actualizar_progreso_cada_n_mensajes", minimo=1, maximo=1_000_000
         ),
@@ -222,6 +232,55 @@ def _extensiones(datos: dict[str, Any]) -> list[str]:
     if not extensiones:
         return list(_avisar_valor_invalido("extensiones_soportadas", valor))
     return extensiones
+
+
+def _dias_recientes(datos: dict[str, Any]) -> list[int]:
+    """Valida la lista de ventanas temporales expresadas en días.
+
+    Se admite tanto una lista (``[30, 60, 90]``) como un único número (``30``),
+    porque escribir un entero suelto es el error de escritura más natural.
+    """
+    valor = datos.get("dias_recientes", CONFIG_POR_DEFECTO["dias_recientes"])
+
+    if valor in (None, ""):
+        return []
+    if isinstance(valor, int) and not isinstance(valor, bool):
+        valor = [valor]
+    if not isinstance(valor, list):
+        return list(_avisar_valor_invalido("dias_recientes", valor))
+
+    dias: list[int] = []
+    for elemento in valor:
+        if not isinstance(elemento, int) or isinstance(elemento, bool) or elemento <= 0:
+            logger.warning("Valor inválido en 'dias_recientes' (se ignora): %r", elemento)
+            continue
+        if elemento not in dias:
+            dias.append(elemento)
+
+    return sorted(dias)
+
+
+def _fecha(datos: dict[str, Any], clave: str) -> str:
+    """Valida una fecha en formato ``AAAA-MM-DD``, admitiendo la cadena vacía."""
+    valor = datos.get(clave, CONFIG_POR_DEFECTO[clave])
+
+    if valor in (None, ""):
+        return ""
+    if not isinstance(valor, str):
+        return str(_avisar_valor_invalido(clave, valor))
+
+    texto = valor.strip()
+    try:
+        datetime.strptime(texto, "%Y-%m-%d")
+    except ValueError:
+        logger.warning(
+            "Fecha inválida en config.json para '%s' (%r). Se esperaba el "
+            "formato AAAA-MM-DD; se ignora el filtro.",
+            clave,
+            valor,
+        )
+        return ""
+    return texto
 
 
 def _guardar_configuracion(ruta_config: Path, config: dict[str, Any]) -> None:

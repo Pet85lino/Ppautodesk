@@ -3,15 +3,15 @@
 Revisión completa del código previo, corrección de los defectos encontrados y
 verificación de que las correcciones funcionan.
 
-- **Defectos corregidos:** 18
-- **Pruebas automatizadas:** 145 (144 ejecutadas, 1 omitida por requerir Telethon)
+- **Defectos corregidos:** 20
+- **Pruebas automatizadas:** 197 (196 ejecutadas, 1 omitida por requerir Telethon)
 - **Resultado:** todas en verde
 
 ```
 $ python ejecutar_tests.py
-Ran 145 tests in 0.10s
+Ran 197 tests in 0.13s
 OK (skipped=1)
-Resumen: 145 pruebas | 0 fallos | 0 errores | 1 omitidas
+Resumen: 197 pruebas | 0 fallos | 0 errores | 1 omitidas
 ```
 
 ---
@@ -321,6 +321,89 @@ explícitamente con `--instalar-dependencias`. **Verificación:**
 
 ---
 
+## 4.bis Defectos detectados en el propio módulo de descarga
+
+Al ampliar el proyecto para recorrer todos los grupos y canales de una
+cuenta, la primera versión del descargador arrastraba dos defectos que la
+revisión detectó antes de darla por buena.
+
+### 4.bis.1 Los mensajes se acumulaban en memoria
+
+**Dónde:** `core/descargador.py`
+
+`descargar_chat` construía la lista completa de mensajes antes de escribir
+nada. Para un chat suelto es irrelevante; para *todos* los grupos y canales
+de una cuenta son potencialmente millones de mensajes en RAM, reproduciendo
+exactamente el defecto 1.1 que este proyecto se propuso corregir.
+
+**Corrección:** los mensajes se serializan a disco según llegan. El pico de
+memoria de una descarga ya no depende del tamaño del historial.
+
+### 4.bis.2 Sin manejo de los límites de peticiones
+
+**Dónde:** `core/descargador.py`
+
+Recorrer todos los diálogos dispara `FloodWaitError` con total seguridad: el
+servidor obliga a esperar. Sin tratarlo, la descarga moría a mitad y dejaba
+el trabajo a medias.
+
+**Corrección:** se espera lo que pide Telegram y se reanuda usando el
+identificador del último mensaje recibido, sin repetir ni perder ninguno. Si
+la espera supera el máximo configurado, se salta ese chat y se continúa.
+
+**Añadido en la misma revisión:** los archivos se escriben con extensión
+`.parcial` y se renombran al completarse, para que una descarga interrumpida
+—incluida una cancelación con Ctrl+C— nunca deje un JSON truncado en la
+carpeta que después analiza el programa.
+
+### 4.bis.3 Los grupos privados no se podían seleccionar
+
+**Dónde:** `core/descargador.py`
+
+La selección de chats usaba `get_entity()`, que resuelve identificadores
+numéricos y nombres de usuario. Los grupos privados **no tienen nombre de
+usuario**, así que la única forma de elegirlos era conocer su ID numérico,
+que no aparece en ninguna parte de la interfaz de Telegram.
+
+**Corrección:** se recorre la lista de diálogos y se emparejan por ID, por
+`@usuario` o por parte del nombre, sin distinguir mayúsculas. Se añade
+además `--listar-chats`, que muestra los chats accesibles con su tipo, ID y
+nombre. **Verificación:** `TestSeleccionDeChats`, 11 pruebas.
+
+Un detalle que merece mención: Telegram modela los supergrupos como canales,
+de modo que `is_channel` es cierto tanto para un canal de difusión como para
+un supergrupo. Filtrar por "canales" sin excluir los grupos habría devuelto
+resultados que ningún usuario esperaría. **Verificación:**
+`test_tipo_canales_excluye_los_supergrupos`.
+
+---
+
+## 4.ter Filtrado por rango de fechas
+
+Añadido a petición del usuario, con dos decisiones que conviene justificar.
+
+**Un solo recorrido para todas las ventanas.** Las ventanas pedidas (30, 60,
+90, 160 y 180 días) son concéntricas: lo que cae en 30 cae también en 60.
+Procesar cinco veces el historial habría multiplicado por cinco el tiempo
+para obtener información que se puede repartir en una sola pasada. Cada
+coincidencia se escribe en todas las ventanas que la contienen, y se
+descartan de entrada los mensajes que no caben ni en la más amplia, de modo
+que ni siquiera se evalúan contra los patrones.
+
+**Los mensajes con fecha ilegible se incluyen, no se descartan.** Un filtro
+de fechas que se traga coincidencias reales por un formato inesperado es
+peor que inútil en una herramienta de análisis: da una respuesta incompleta
+con apariencia de completa. Se incluyen y se avisa en el log de cuántos
+fueron. **Verificación:** `test_las_fechas_ilegibles_se_incluyen`.
+
+El parseo cubre los dos formatos que emite Telegram —el ISO del export JSON
+y el `DD.MM.AAAA HH:MM:SS UTC+HH:MM` del HTML—, además de marcas de tiempo
+Unix. Todo se normaliza a la hora local que muestra la aplicación, para que
+un mismo mensaje no caiga a un lado u otro del corte según de qué formato
+provenga. **Verificación:** `tests/test_filtro_fechas.py`, 32 pruebas.
+
+---
+
 ## 5. Mantenibilidad
 
 ### 5.1 Dependencia cruzada entre capas
@@ -421,5 +504,7 @@ progreso y la conversión de mensajes del descargador.
 | Resultados entre ejecuciones | Se acumulaban | Se reemplazan |
 | Validación de configuración | Ninguna | Todas las claves |
 | Límite de descriptores | Ninguno | Caché LRU |
-| Pruebas automatizadas | 0 | 145 |
+| Selección de grupos privados | Imposible sin el ID | Por nombre, ID o @usuario |
+| Filtrado por fechas | No existía | Ventanas múltiples en una pasada |
+| Pruebas automatizadas | 0 | 197 |
 | Líneas > 100 caracteres | Varias | 0 |

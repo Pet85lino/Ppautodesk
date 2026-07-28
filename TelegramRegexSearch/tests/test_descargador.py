@@ -20,9 +20,13 @@ from pathlib import Path
 
 from core.descargador import (
     FILTROS_SERVIDOR,
+    TIPOS_CHAT,
     ErrorDescarga,
     _obtener_filtro,
+    coincide_con_dialogo,
+    describir_dialogo,
     escribir_export,
+    incluir_dialogo,
     mensaje_a_formato_export,
     telethon_disponible,
 )
@@ -238,3 +242,91 @@ class TestDegradacionSinTelethon(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _DialogoFalso:
+    """Sustituto de un objeto ``Dialog`` de Telethon."""
+
+    def __init__(self, **atributos: object) -> None:
+        self.id = 0
+        self.name = ""
+        self.is_group = False
+        self.is_channel = False
+        self.is_user = False
+        self.entity = _RemitenteFalso()
+        for clave, valor in atributos.items():
+            setattr(self, clave, valor)
+
+
+class TestSeleccionDeChats(unittest.TestCase):
+    """Verifica el filtrado por tipo y la identificación de chats concretos."""
+
+    def setUp(self) -> None:
+        logging.disable(logging.CRITICAL)
+        self.grupo = _DialogoFalso(id=101, name="Grupo Trabajo", is_group=True)
+        # En Telegram un supergrupo es a la vez grupo y canal.
+        self.supergrupo = _DialogoFalso(
+            id=102, name="Super Grupo", is_group=True, is_channel=True
+        )
+        self.canal = _DialogoFalso(id=103, name="Canal Noticias", is_channel=True)
+        self.privado = _DialogoFalso(id=104, name="Ana", is_user=True)
+
+    def tearDown(self) -> None:
+        logging.disable(logging.NOTSET)
+
+    def test_tipo_todos_incluye_cualquier_dialogo(self) -> None:
+        for dialogo in (self.grupo, self.supergrupo, self.canal, self.privado):
+            self.assertTrue(incluir_dialogo(dialogo, "todos"))
+
+    def test_tipo_grupos_incluye_los_supergrupos(self) -> None:
+        self.assertTrue(incluir_dialogo(self.grupo, "grupos"))
+        self.assertTrue(incluir_dialogo(self.supergrupo, "grupos"))
+        self.assertFalse(incluir_dialogo(self.canal, "grupos"))
+        self.assertFalse(incluir_dialogo(self.privado, "grupos"))
+
+    def test_tipo_canales_excluye_los_supergrupos(self) -> None:
+        """Un supergrupo tiene is_channel=True pero no es un canal de difusión."""
+        self.assertTrue(incluir_dialogo(self.canal, "canales"))
+        self.assertFalse(incluir_dialogo(self.supergrupo, "canales"))
+        self.assertFalse(incluir_dialogo(self.grupo, "canales"))
+
+    def test_tipo_privados(self) -> None:
+        self.assertTrue(incluir_dialogo(self.privado, "privados"))
+        self.assertFalse(incluir_dialogo(self.grupo, "privados"))
+
+    def test_identifica_por_id_numerico(self) -> None:
+        self.assertTrue(coincide_con_dialogo(self.grupo, "101"))
+        self.assertFalse(coincide_con_dialogo(self.grupo, "999"))
+
+    def test_identifica_por_nombre_de_usuario(self) -> None:
+        canal = _DialogoFalso(
+            id=1, name="Noticias", is_channel=True, entity=_RemitenteFalso(username="noticias")
+        )
+        self.assertTrue(coincide_con_dialogo(canal, "@noticias"))
+        self.assertTrue(coincide_con_dialogo(canal, "noticias"))
+
+    def test_identifica_grupos_privados_por_parte_del_nombre(self) -> None:
+        """Los grupos privados no tienen @usuario: el nombre es la única vía."""
+        self.assertTrue(coincide_con_dialogo(self.grupo, "trabajo"))
+        self.assertTrue(coincide_con_dialogo(self.grupo, "Grupo Trabajo"))
+        self.assertTrue(coincide_con_dialogo(self.grupo, "TRABAJO"))
+        self.assertFalse(coincide_con_dialogo(self.grupo, "contabilidad"))
+
+    def test_un_identificador_vacio_no_coincide_con_nada(self) -> None:
+        self.assertFalse(coincide_con_dialogo(self.grupo, "   "))
+
+    def test_describir_dialogo_clasifica_correctamente(self) -> None:
+        self.assertEqual(describir_dialogo(self.grupo)["tipo"], "grupo")
+        self.assertEqual(describir_dialogo(self.supergrupo)["tipo"], "grupo")
+        self.assertEqual(describir_dialogo(self.canal)["tipo"], "canal")
+        self.assertEqual(describir_dialogo(self.privado)["tipo"], "privado")
+
+    def test_describir_dialogo_incluye_el_usuario_si_existe(self) -> None:
+        canal = _DialogoFalso(
+            id=5, name="N", is_channel=True, entity=_RemitenteFalso(username="canal5")
+        )
+        self.assertEqual(describir_dialogo(canal)["usuario"], "@canal5")
+        self.assertEqual(describir_dialogo(self.grupo)["usuario"], "")
+
+    def test_los_tipos_documentados_estan_disponibles(self) -> None:
+        self.assertEqual(set(TIPOS_CHAT), {"todos", "grupos", "canales", "privados"})

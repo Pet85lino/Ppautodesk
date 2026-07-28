@@ -13,6 +13,7 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import main as aplicacion
@@ -294,3 +295,157 @@ class TestPipelineCompleto(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVentanasTemporales(unittest.TestCase):
+    """Verifica el filtrado por rango de fechas de extremo a extremo."""
+
+    def setUp(self) -> None:
+        self._directorio = tempfile.TemporaryDirectory()
+        self.base = Path(self._directorio.name)
+        (self.base / "datos").mkdir()
+        (self.base / "patrones.txt").write_text(
+            "correos :: [\\w.]+@[\\w.]+\\.\\w+\n", encoding="utf-8"
+        )
+        self._escribir_datos_con_fechas()
+
+    def tearDown(self) -> None:
+        self._directorio.cleanup()
+
+    def _escribir_datos_con_fechas(self) -> None:
+        """Crea un chat con un mensaje por cada antigüedad de interés."""
+        ahora = datetime.now()
+        antiguedades = {"d10": 10, "d45": 45, "d75": 75, "d120": 120, "d200": 200}
+        mensajes = [
+            {
+                "id": nombre,
+                "type": "message",
+                "date": (ahora - timedelta(days=dias)).strftime("%Y-%m-%dT%H:%M:%S"),
+                "from": "Ana",
+                "text": f"correo {nombre}@ejemplo.com",
+            }
+            for nombre, dias in antiguedades.items()
+        ]
+        (self.base / "datos" / "chat.json").write_text(
+            json.dumps({"name": "Chat", "messages": mensajes}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def _ejecutar(self, *extra: str) -> int:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return aplicacion.main(["--base-dir", str(self.base), "--sin-progreso", *extra])
+
+    def _leer(self, *partes: str) -> str:
+        return (self.base / "resultados" / Path(*partes)).read_text(encoding="utf-8")
+
+    def test_sin_filtro_se_analiza_todo_el_historial(self) -> None:
+        self.assertEqual(self._ejecutar(), EXITO)
+        contenido = self._leer("correos.txt")
+        for identificador in ("d10", "d45", "d75", "d120", "d200"):
+            self.assertIn(f"{identificador}@ejemplo.com", contenido)
+
+    def test_una_ventana_unica_escribe_en_la_carpeta_principal(self) -> None:
+        self.assertEqual(self._ejecutar("--dias", "30"), EXITO)
+        contenido = self._leer("correos.txt")
+        self.assertIn("d10@ejemplo.com", contenido)
+        self.assertNotIn("d45@ejemplo.com", contenido)
+        self.assertNotIn("d200@ejemplo.com", contenido)
+
+    def test_varias_ventanas_generan_una_subcarpeta_por_rango(self) -> None:
+        self.assertEqual(self._ejecutar("--dias", "30,60,90,160,180"), EXITO)
+
+        carpetas = sorted(p.name for p in (self.base / "resultados").iterdir() if p.is_dir())
+        self.assertEqual(
+            carpetas,
+            [
+                "ultimos_160_dias",
+                "ultimos_180_dias",
+                "ultimos_30_dias",
+                "ultimos_60_dias",
+                "ultimos_90_dias",
+            ],
+        )
+
+    def test_las_ventanas_son_acumulativas(self) -> None:
+        """Un mensaje de hace 10 días debe aparecer en las cinco ventanas."""
+        self._ejecutar("--dias", "30,60,90,160,180")
+
+        for carpeta in ("ultimos_30_dias", "ultimos_60_dias", "ultimos_180_dias"):
+            self.assertIn("d10@ejemplo.com", self._leer(carpeta, "correos.txt"))
+
+    def test_cada_ventana_excluye_lo_que_le_corresponde(self) -> None:
+        self._ejecutar("--dias", "30,60,90,160,180")
+
+        de_30 = self._leer("ultimos_30_dias", "correos.txt")
+        self.assertNotIn("d45@ejemplo.com", de_30)
+
+        de_60 = self._leer("ultimos_60_dias", "correos.txt")
+        self.assertIn("d45@ejemplo.com", de_60)
+        self.assertNotIn("d75@ejemplo.com", de_60)
+
+        de_90 = self._leer("ultimos_90_dias", "correos.txt")
+        self.assertIn("d75@ejemplo.com", de_90)
+        self.assertNotIn("d120@ejemplo.com", de_90)
+
+        de_180 = self._leer("ultimos_180_dias", "correos.txt")
+        self.assertIn("d120@ejemplo.com", de_180)
+        self.assertNotIn("d200@ejemplo.com", de_180)
+
+    def test_el_rango_se_puede_fijar_en_config_json(self) -> None:
+        """El requisito: el rango de fechas debe ser configurable."""
+        (self.base / "config.json").write_text(
+            json.dumps({"dias_recientes": [30, 60]}), encoding="utf-8"
+        )
+        self.assertEqual(self._ejecutar(), EXITO)
+
+        self.assertIn("d10@ejemplo.com", self._leer("ultimos_30_dias", "correos.txt"))
+        self.assertIn("d45@ejemplo.com", self._leer("ultimos_60_dias", "correos.txt"))
+
+    def test_la_consola_tiene_prioridad_sobre_config_json(self) -> None:
+        (self.base / "config.json").write_text(
+            json.dumps({"dias_recientes": [180]}), encoding="utf-8"
+        )
+        self.assertEqual(self._ejecutar("--dias", "30"), EXITO)
+
+        contenido = self._leer("correos.txt")
+        self.assertIn("d10@ejemplo.com", contenido)
+        self.assertNotIn("d120@ejemplo.com", contenido)
+
+    def test_fechas_explicitas_desde_y_hasta(self) -> None:
+        ahora = datetime.now()
+        desde = (ahora - timedelta(days=80)).strftime("%Y-%m-%d")
+        hasta = (ahora - timedelta(days=20)).strftime("%Y-%m-%d")
+
+        self.assertEqual(self._ejecutar("--desde", desde, "--hasta", hasta), EXITO)
+
+        contenido = self._leer("correos.txt")
+        self.assertIn("d45@ejemplo.com", contenido)
+        self.assertIn("d75@ejemplo.com", contenido)
+        self.assertNotIn("d10@ejemplo.com", contenido)
+        self.assertNotIn("d120@ejemplo.com", contenido)
+
+    def test_una_fecha_mal_escrita_se_rechaza_con_claridad(self) -> None:
+        self.assertEqual(self._ejecutar("--desde", "15/01/2024"), SIN_TRABAJO)
+
+    def test_un_rango_invertido_se_rechaza(self) -> None:
+        self.assertEqual(
+            self._ejecutar("--desde", "2024-06-01", "--hasta", "2024-01-01"), SIN_TRABAJO
+        )
+
+    def test_las_coincidencias_incluyen_a_todos_los_usuarios(self) -> None:
+        """El buscador no filtra por remitente: recoge lo de todos."""
+        ahora = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        mensajes = [
+            {"id": 1, "type": "message", "date": ahora, "from": "Ana", "text": "a@x.com"},
+            {"id": 2, "type": "message", "date": ahora, "from": "Beto", "text": "b@x.com"},
+            {"id": 3, "type": "message", "date": ahora, "from": "Yo", "text": "c@x.com"},
+        ]
+        (self.base / "datos" / "grupo.json").write_text(
+            json.dumps({"name": "Grupo", "messages": mensajes}), encoding="utf-8"
+        )
+
+        self.assertEqual(self._ejecutar("--dias", "30"), EXITO)
+
+        contenido = self._leer("correos.txt")
+        for usuario in ("Ana", "Beto", "Yo"):
+            self.assertIn(f"Usuario: {usuario}", contenido)

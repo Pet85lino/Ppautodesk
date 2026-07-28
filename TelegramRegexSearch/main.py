@@ -20,11 +20,19 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
 from config.config_manager import Configuracion, cargar_configuracion
-from core.descargador import FILTROS_SERVIDOR
+from core.descargador import FILTROS_SERVIDOR, TIPOS_CHAT
+from core.filtro_fechas import (
+    AsignadorVentanas,
+    VentanaTemporal,
+    construir_ventanas,
+    filtrar_mensajes,
+    ventana_envolvente,
+)
 from core.models import MODOS_VALIDOS, Mensaje, ModoBusqueda
 from core.parser_html import iterar_mensajes_html
 from core.parser_json import iterar_archivos, iterar_mensajes
@@ -90,6 +98,28 @@ def parsear_argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Archivo de patrones a usar. Tiene prioridad sobre config.json.",
     )
     parser.add_argument(
+        "--dias",
+        default=None,
+        metavar="N[,N...]",
+        help=(
+            "Analiza solo los mensajes de los últimos N días. Admite varias "
+            "ventanas separadas por comas (por ejemplo 30,60,90,160,180): cada "
+            "una genera su propia subcarpeta en resultados/."
+        ),
+    )
+    parser.add_argument(
+        "--desde",
+        default=None,
+        metavar="AAAA-MM-DD",
+        help="Analiza solo los mensajes a partir de esta fecha (incluida).",
+    )
+    parser.add_argument(
+        "--hasta",
+        default=None,
+        metavar="AAAA-MM-DD",
+        help="Analiza solo los mensajes hasta esta fecha (incluida).",
+    )
+    parser.add_argument(
         "--sin-progreso",
         action="store_true",
         help="Desactiva la barra de progreso.",
@@ -111,11 +141,31 @@ def parsear_argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Descarga historiales desde Telegram antes de analizarlos.",
     )
     grupo.add_argument(
+        "--listar-chats",
+        action="store_true",
+        help="Muestra los grupos y canales accesibles con su nombre e ID, y termina.",
+    )
+    grupo.add_argument(
         "--chat",
         action="append",
         default=None,
         metavar="CHAT",
-        help="Chat a descargar (usuario, enlace o ID). Repetible. Por defecto, todos.",
+        help=(
+            "Chat concreto a descargar: ID, @usuario o parte del nombre. "
+            "Repetible. Por defecto, todos los del tipo indicado."
+        ),
+    )
+    grupo.add_argument(
+        "--tipo",
+        choices=list(TIPOS_CHAT),
+        default="todos",
+        help="Qué diálogos incluir: todos, grupos, canales o privados.",
+    )
+    grupo.add_argument(
+        "--espera-maxima",
+        type=int,
+        default=300,
+        help="Segundos máximos de espera cuando Telegram aplica un límite de peticiones.",
     )
     grupo.add_argument(
         "--limite",
@@ -186,6 +236,9 @@ def ejecutar(argumentos: argparse.Namespace) -> int:
         logger.error("El entorno no cumple los requisitos mínimos. Abortando.")
         return ERROR_FATAL
 
+    if argumentos.listar_chats:
+        return EXITO if _listar_chats(argumentos, rutas) else ERROR_FATAL
+
     if argumentos.descargar and not _descargar(argumentos, rutas):
         return ERROR_FATAL
 
@@ -200,10 +253,16 @@ def ejecutar(argumentos: argparse.Namespace) -> int:
         )
         return SIN_TRABAJO
 
+    try:
+        ventanas = _construir_ventanas(argumentos, config)
+    except ValueError as exc:
+        logger.error("Rango de fechas inválido: %s", exc)
+        return SIN_TRABAJO
+
     motor = MotorBusqueda(patrones, modo, config.evitar_duplicados)
 
     try:
-        return _procesar(config, rutas, motor, argumentos.sin_progreso)
+        return _procesar(config, rutas, motor, argumentos.sin_progreso, ventanas)
     except KeyboardInterrupt:
         logger.warning(
             "Ejecución interrumpida por el usuario. Los resultados parciales se conservan."
@@ -241,6 +300,115 @@ def _resolver_rutas(
         "logs": resolver_ruta(base_dir, config.carpeta_logs),
         "cache": resolver_ruta(base_dir, config.carpeta_cache),
     }
+
+
+def _construir_ventanas(
+    argumentos: argparse.Namespace, config: Configuracion
+) -> list[VentanaTemporal]:
+    """Determina el rango de fechas a analizar.
+
+    Las opciones de consola tienen prioridad sobre ``config.json``, de modo
+    que la configuración fija el comportamiento habitual y la consola permite
+    desviarse de él puntualmente sin editar ningún archivo.
+
+    Args:
+        argumentos: Argumentos de consola ya parseados.
+        config: Configuración cargada.
+
+    Returns:
+        Lista de ventanas temporales a aplicar.
+
+    Raises:
+        ValueError: Si alguna fecha o número de días no es interpretable.
+    """
+    if argumentos.dias is not None:
+        dias = _parsear_dias(argumentos.dias)
+    else:
+        dias = list(config.dias_recientes)
+
+    desde = _parsear_fecha_argumento(argumentos.desde or config.fecha_desde, "--desde")
+    hasta = _parsear_fecha_argumento(argumentos.hasta or config.fecha_hasta, "--hasta")
+
+    if desde is not None and hasta is not None and desde > hasta:
+        raise ValueError("la fecha inicial es posterior a la final")
+
+    if hasta is not None:
+        # Se incluye el día completo indicado en --hasta, no solo su medianoche.
+        hasta = hasta.replace(hour=23, minute=59, second=59)
+
+    return construir_ventanas(dias=dias, desde=desde, hasta=hasta)
+
+
+def _parsear_dias(texto: str) -> list[int]:
+    """Interpreta el valor de ``--dias``, que admite una lista separada por comas."""
+    dias: list[int] = []
+    for parte in texto.split(","):
+        parte = parte.strip()
+        if not parte:
+            continue
+        try:
+            valor = int(parte)
+        except ValueError:
+            raise ValueError(f"'{parte}' no es un número de días válido") from None
+        if valor <= 0:
+            raise ValueError(f"el número de días debe ser positivo, y se recibió {valor}")
+        dias.append(valor)
+    return dias
+
+
+def _parsear_fecha_argumento(texto: str | None, opcion: str) -> datetime | None:
+    """Interpreta una fecha ``AAAA-MM-DD`` procedente de la consola o de config."""
+    if not texto:
+        return None
+    try:
+        return datetime.strptime(texto.strip(), "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"{opcion} espera el formato AAAA-MM-DD y recibió '{texto}'") from None
+
+
+def _listar_chats(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
+    """Muestra los chats accesibles para que el usuario elija cuáles analizar.
+
+    Los grupos privados no tienen nombre de usuario, así que este listado es
+    la única forma práctica de averiguar cómo referirse a ellos con --chat.
+
+    Returns:
+        ``True`` si el listado se pudo obtener.
+    """
+    import asyncio
+
+    from core.descargador import ErrorDescarga, listar_chats, preparar_dependencias
+    from utils.credenciales import cargar_credenciales
+
+    if not preparar_dependencias(instalar=argumentos.instalar_dependencias):
+        logger.error("Falta Telethon. Instálalo con 'pip install telethon'.")
+        return False
+
+    credenciales = cargar_credenciales(rutas["base"])
+    if credenciales is None:
+        logger.error("No hay credenciales configuradas; consulta el README.")
+        return False
+
+    try:
+        chats = asyncio.run(listar_chats(credenciales, rutas["cache"], argumentos.tipo))
+    except ErrorDescarga as exc:
+        logger.error("No se pudo obtener la lista de chats: %s", exc)
+        return False
+    except Exception as exc:  # noqa: BLE001 - se informa con claridad y se sale
+        logger.error("Error inesperado al listar los chats: %s", exc)
+        return False
+
+    if not chats:
+        logger.warning("No se encontró ningún chat del tipo '%s'.", argumentos.tipo)
+        return True
+
+    print(f"\n{'TIPO':<9} {'ID':>14}  {'USUARIO':<20} NOMBRE")
+    print("-" * 78)
+    for chat in chats:
+        print(f"{chat['tipo']:<9} {str(chat['id']):>14}  {chat['usuario']:<20} {chat['nombre']}")
+    print(f"\n{len(chats)} chat(s). Usa --chat con el ID, el @usuario o parte del nombre.\n")
+
+    return True
 
 
 def _descargar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
@@ -289,6 +457,8 @@ def _descargar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
                 limite=argumentos.limite,
                 consulta=argumentos.consulta,
                 filtro=argumentos.filtro,
+                tipo=argumentos.tipo,
+                espera_maxima=argumentos.espera_maxima,
             )
         )
     except ErrorDescarga as exc:
@@ -307,8 +477,16 @@ def _procesar(
     rutas: dict[str, Path],
     motor: MotorBusqueda,
     sin_progreso: bool,
+    ventanas: list[VentanaTemporal],
 ) -> int:
-    """Recorre los archivos de datos, busca coincidencias y las exporta."""
+    """Recorre los archivos de datos, busca coincidencias y las exporta.
+
+    Cuando se piden varias ventanas temporales se escriben todas en el mismo
+    recorrido: al ser rangos concéntricos, una coincidencia de los últimos 30
+    días pertenece también a la de 60, 90 y siguientes. Recorrer los archivos
+    una sola vez evita releer y reanalizar el historial completo por cada
+    ventana solicitada.
+    """
     tam_bloque = config.tam_buffer_lectura_kb * 1024
     archivos = list(iterar_archivos(rutas["datos"], config.extensiones_soportadas))
 
@@ -320,36 +498,79 @@ def _procesar(
         return SIN_TRABAJO
 
     logger.info("Archivos a analizar: %d", len(archivos))
+    _registrar_ventanas(ventanas)
 
     progreso = RastreadorProgreso(
         config.actualizar_progreso_cada_n_mensajes,
         forzar_activo=False if sin_progreso else None,
     )
+    asignador = AsignadorVentanas(ventanas)
+    envolvente = ventana_envolvente(ventanas)
+    exportadores = _crear_exportadores(config, rutas, ventanas)
+    escritas = 0
+    generados = 0
 
-    with progreso, ExportadorResultados(
-        rutas["resultados"],
-        config.codificacion_salida,
-        config.max_archivos_resultado_abiertos,
-    ) as exportador:
-        for ruta in archivos:
-            logger.debug("Procesando %s", ruta.name)
-            progreso.registrar_archivo()
+    try:
+        with progreso:
+            for ruta in archivos:
+                logger.debug("Procesando %s", ruta.name)
+                progreso.registrar_archivo()
 
-            mensajes = _contar_progreso(
-                _leer_mensajes(ruta, tam_bloque),
-                progreso,
-                motor.cantidad_patrones,
-            )
+                mensajes = _contar_progreso(
+                    filtrar_mensajes(_leer_mensajes(ruta, tam_bloque), envolvente),
+                    progreso,
+                    motor.cantidad_patrones,
+                )
 
-            for coincidencia in motor.buscar(mensajes):
-                progreso.registrar_coincidencia()
-                exportador.exportar(coincidencia)
+                for coincidencia in motor.buscar(mensajes):
+                    progreso.registrar_coincidencia()
+                    for etiqueta in asignador.etiquetas_de(coincidencia.mensaje):
+                        exportadores[etiqueta].exportar(coincidencia)
 
-        coincidencias_escritas = exportador.coincidencias_escritas
-        archivos_generados = exportador.archivos_generados
+            escritas = sum(exp.coincidencias_escritas for exp in exportadores.values())
+            generados = sum(exp.archivos_generados for exp in exportadores.values())
+    finally:
+        for exportador in exportadores.values():
+            exportador.cerrar()
 
-    _registrar_resumen(progreso, motor, coincidencias_escritas, archivos_generados, rutas)
+    if asignador.fechas_ilegibles:
+        logger.warning(
+            "No se pudo interpretar la fecha de %d mensaje(s); se han incluido "
+            "en todas las ventanas para no perder coincidencias.",
+            asignador.fechas_ilegibles,
+        )
+
+    _registrar_resumen(progreso, motor, escritas, generados, rutas)
     return EXITO
+
+
+def _crear_exportadores(
+    config: Configuracion, rutas: dict[str, Path], ventanas: list[VentanaTemporal]
+) -> dict[str, ExportadorResultados]:
+    """Crea un exportador por ventana temporal, cada uno en su subcarpeta."""
+    exportadores: dict[str, ExportadorResultados] = {}
+    for ventana in ventanas:
+        destino = rutas["resultados"]
+        carpeta = destino / ventana.etiqueta if ventana.etiqueta else destino
+        exportadores[ventana.etiqueta] = ExportadorResultados(
+            carpeta,
+            config.codificacion_salida,
+            config.max_archivos_resultado_abiertos,
+        )
+    return exportadores
+
+
+def _registrar_ventanas(ventanas: list[VentanaTemporal]) -> None:
+    """Deja constancia en el log del rango de fechas que se va a analizar."""
+    if len(ventanas) == 1 and ventanas[0].sin_limites:
+        logger.info("Rango de fechas: todo el historial.")
+        return
+
+    for ventana in ventanas:
+        desde = ventana.desde.strftime("%Y-%m-%d") if ventana.desde else "el principio"
+        hasta = ventana.hasta.strftime("%Y-%m-%d") if ventana.hasta else "hoy"
+        destino = f" -> resultados/{ventana.etiqueta}/" if ventana.etiqueta else ""
+        logger.info("Rango de fechas: desde %s hasta %s%s", desde, hasta, destino)
 
 
 def _leer_mensajes(ruta: Path, tam_bloque: int) -> Iterator[Mensaje]:

@@ -121,6 +121,9 @@ avisa en el log (nunca falla en silencio).
 | `modo_busqueda` | `"search"` | `search`, `findall` o `finditer`. |
 | `ignorar_mayusculas` | `false` | Aplica `re.IGNORECASE` a todos los patrones. |
 | `evitar_duplicados` | `true` | Descarta coincidencias repetidas. |
+| `dias_recientes` | `[]` | Ventanas temporales en días, p. ej. `[30, 60, 90, 160, 180]`. |
+| `fecha_desde` | `""` | Fecha mínima `AAAA-MM-DD`. |
+| `fecha_hasta` | `""` | Fecha máxima `AAAA-MM-DD`. |
 | `actualizar_progreso_cada_n_mensajes` | `200` | Frecuencia de refresco de la barra. |
 | `codificacion_salida` | `"utf-8"` | Codificación de los `.txt`. |
 | `max_archivos_resultado_abiertos` | `32` | Descriptores abiertos a la vez. |
@@ -133,6 +136,73 @@ avisa en el log (nunca falla en silencio).
 | `search` | La **primera** coincidencia de cada patrón en cada mensaje. | El más rápido. Para saber *qué mensajes* contienen algo. |
 | `finditer` | **Todas** las coincidencias, con su posición. | El más completo. Para extraer *todos* los datos. |
 | `findall` | Todas las coincidencias, sin posición. | Cuando la posición no importa. |
+
+---
+
+## Rangos de fechas
+
+Se puede acotar el análisis a un periodo, por consola o desde `config.json`.
+
+### Una sola ventana
+
+```bash
+python main.py --dias 30                      # últimos 30 días
+python main.py --desde 2024-01-01             # desde una fecha
+python main.py --desde 2024-01-01 --hasta 2024-06-30   # entre dos fechas
+```
+
+Los resultados van a `resultados/` como siempre.
+
+### Varias ventanas a la vez
+
+```bash
+python main.py --dias 30,60,90,160,180
+```
+
+Genera una subcarpeta por ventana:
+
+```
+resultados/
+├── ultimos_30_dias/
+├── ultimos_60_dias/
+├── ultimos_90_dias/
+├── ultimos_160_dias/
+└── ultimos_180_dias/
+```
+
+Las ventanas son **acumulativas**: un mensaje de hace 10 días aparece en las
+cinco; uno de hace 100 aparece solo en las de 160 y 180. Todo se resuelve en
+**un único recorrido** de los archivos, así que pedir cinco ventanas cuesta
+prácticamente lo mismo que pedir una.
+
+### Desde config.json
+
+```json
+{
+    "dias_recientes": [30, 60, 90, 160, 180],
+    "fecha_desde": "",
+    "fecha_hasta": ""
+}
+```
+
+Las opciones de consola tienen prioridad sobre `config.json`, de modo que la
+configuración fija tu comportamiento habitual y la consola te permite
+desviarte puntualmente sin editar nada.
+
+> **Sobre las fechas:** se compara la hora local que muestra Telegram, la
+> misma que ves en la aplicación. Si la fecha de un mensaje no se puede
+> interpretar, ese mensaje **se incluye** en lugar de descartarse: perder una
+> coincidencia real por un problema de formato sería peor que mostrarla de
+> más. El log avisa de cuántos hubo.
+
+---
+
+## ¿De quién son las coincidencias?
+
+De **todos los participantes**, no solo tuyas. El buscador recorre cada
+mensaje de cada chat sin mirar quién lo escribió, y cada resultado indica su
+autor en el campo `Usuario:`. En un grupo con cien personas verás las
+coincidencias de las cien.
 
 ---
 
@@ -188,6 +258,9 @@ python main.py [opciones]
 | `--modo {search,findall,finditer}` | Modo de búsqueda (manda sobre `config.json`). |
 | `--datos RUTA` | Analiza exports de otra carpeta. |
 | `--patrones RUTA` | Usa otro archivo de patrones. |
+| `--dias N[,N...]` | Solo los últimos N días. Admite varias ventanas. |
+| `--desde AAAA-MM-DD` | Fecha mínima. |
+| `--hasta AAAA-MM-DD` | Fecha máxima. |
 | `--sin-progreso` | Desactiva la barra de progreso. |
 | `--verbose` | Muestra también los mensajes de depuración. |
 
@@ -196,6 +269,7 @@ Ejemplos:
 ```bash
 python main.py --modo finditer
 python main.py --datos "D:/exports_telegram" --patrones "mis_patrones.txt"
+python main.py --dias 30,60,90,160,180 --modo finditer
 python main.py --verbose --sin-progreso
 ```
 
@@ -246,30 +320,69 @@ export TELEGRAM_API_HASH="TU_API_HASH"
 O copiando `credenciales.ejemplo.json` a `credenciales.json` y rellenándolo.
 Ese archivo está en `.gitignore` para que no acabe en un repositorio.
 
-### Uso
+### Paso 1: ver qué grupos y canales tienes
 
 ```bash
-# Descargar todo y analizarlo
-python main.py --descargar
+python main.py --listar-chats --tipo grupos
+```
 
-# Solo un chat, con límite
-python main.py --descargar --chat @usuario --limite 5000
+```
+TIPO                  ID  USUARIO              NOMBRE
+------------------------------------------------------------------------------
+grupo        -1001234567                       Equipo Proyecto
+grupo        -1009876543  @grupo_publico       Comunidad Python
+canal        -1005555555  @noticias_tech       Noticias Tech
 
-# Solo mensajes con enlaces (filtrado en el servidor)
-python main.py --descargar --filtro enlaces --modo finditer
+3 chat(s). Usa --chat con el ID, el @usuario o parte del nombre.
+```
 
-# Instalar Telethon automáticamente si falta
-python main.py --descargar --instalar-dependencias
+Este paso importa porque **los grupos privados no tienen `@usuario`**: la
+única forma de referirse a ellos es por su ID o por su nombre.
+
+### Paso 2: buscar en los que te interesen
+
+```bash
+# Todos los grupos a los que perteneces
+python main.py --descargar --tipo grupos --dias 30
+
+# Grupos concretos: por nombre (parcial), por @usuario o por ID
+python main.py --descargar --chat "Equipo Proyecto" --chat @noticias_tech
+
+# Solo canales, últimos 90 días, todas las coincidencias
+python main.py --descargar --tipo canales --dias 90 --modo finditer
+
+# Acotar en el servidor antes de descargar: mucho más rápido
+python main.py --descargar --tipo grupos --filtro enlaces --limite 5000
 ```
 
 | Opción | Qué hace |
 |---|---|
 | `--descargar` | Activa la descarga previa al análisis. |
-| `--chat CHAT` | Chat concreto (repetible). Por defecto, todos. |
+| `--listar-chats` | Muestra los chats accesibles y termina. |
+| `--tipo TIPO` | `todos`, `grupos`, `canales` o `privados`. |
+| `--chat CHAT` | Chat concreto por ID, `@usuario` o parte del nombre. Repetible. |
 | `--limite N` | Máximo de mensajes por chat. |
 | `--consulta TEXTO` | Búsqueda por texto en el servidor (no regex). |
 | `--filtro TIPO` | `todos`, `enlaces`, `fotos`, `videos`, `documentos`, `musica`, `voz`, `gifs`, `menciones`, `fijados`, `contactos`, `ubicaciones`. |
+| `--espera-maxima N` | Segundos máximos de espera ante un límite de Telegram. |
 | `--instalar-dependencias` | Instala con pip lo que falte. |
+
+`--tipo grupos` incluye los supergrupos. `--tipo canales` deja fuera los
+supergrupos y se queda solo con los canales de difusión, que es lo que uno
+espera aunque Telegram los modele internamente igual.
+
+### Sobre los límites de Telegram
+
+Recorrer todos tus grupos dispara los límites de peticiones del servidor
+(`FloodWait`). El descargador lo espera y **reanuda desde el último mensaje
+recibido**, sin repetir ni perder ninguno. Si Telegram pide más tiempo del
+indicado en `--espera-maxima`, ese chat se deja a medias y se continúa con el
+siguiente, dejando constancia en el log.
+
+Cada chat se escribe primero en un archivo `.parcial` y se renombra al
+terminar, así que una descarga interrumpida nunca deja un JSON truncado en
+`datos/`. Descargar todo un historial puede tardar horas: empieza con
+`--limite` y `--dias` para hacerte una idea.
 
 La primera vez se pedirá tu teléfono y el código de confirmación. Se crea un
 archivo `.session` en `cache/`: **da acceso a tu cuenta**, no lo compartas
