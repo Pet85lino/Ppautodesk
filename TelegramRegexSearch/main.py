@@ -129,6 +129,15 @@ def parsear_argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Muestra por consola también los mensajes de depuración.",
     )
+    parser.add_argument(
+        "--sin-menu",
+        action="store_true",
+        help=(
+            "No abre el menú interactivo aunque se ejecute sin argumentos. "
+            "El menú solo aparece al lanzar el programa sin opciones desde una "
+            "consola interactiva, como el botón de ejecutar de Pydroid 3."
+        ),
+    )
 
     grupo = parser.add_argument_group(
         "descarga en vivo (opcional)",
@@ -200,11 +209,13 @@ def parsear_argumentos(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def ejecutar(argumentos: argparse.Namespace) -> int:
+def ejecutar(argumentos: argparse.Namespace, argv: Sequence[str] | None = None) -> int:
     """Ejecuta el pipeline completo de TelegramRegexSearch.
 
     Args:
         argumentos: Argumentos ya parseados de la línea de comandos.
+        argv: Argumentos originales, para distinguir una ejecución sin
+            opciones (que abre el menú) de una con opciones explícitas.
 
     Returns:
         Código de salida del proceso.
@@ -243,6 +254,9 @@ def ejecutar(argumentos: argparse.Namespace) -> int:
     if not verificar_entorno():
         logger.error("El entorno no cumple los requisitos mínimos. Abortando.")
         return ERROR_FATAL
+
+    if _debe_mostrar_menu(argv, argumentos):
+        return _menu_interactivo(argumentos, config, rutas)
 
     if argumentos.configurar:
         return EXITO if _configurar(argumentos, rutas) else ERROR_FATAL
@@ -375,6 +389,111 @@ def _parsear_fecha_argumento(texto: str | None, opcion: str) -> datetime | None:
         return datetime.strptime(texto.strip(), "%Y-%m-%d")
     except ValueError:
         raise ValueError(f"{opcion} espera el formato AAAA-MM-DD y recibió '{texto}'") from None
+
+
+def _debe_mostrar_menu(argv: Sequence[str] | None, argumentos: argparse.Namespace) -> bool:
+    """Decide si procede abrir el menú interactivo.
+
+    Solo se abre cuando el programa se lanza **sin ningún argumento** y la
+    entrada es interactiva. Es exactamente lo que ocurre al pulsar el botón
+    de ejecutar en Pydroid 3, donde no hay forma cómoda de pasar opciones.
+    Cualquier argumento, o una entrada redirigida, mantiene el comportamiento
+    de siempre para no romper los usos automatizados.
+    """
+    if argumentos.sin_menu:
+        return False
+
+    argumentos_recibidos = sys.argv[1:] if argv is None else list(argv)
+    if argumentos_recibidos:
+        return False
+
+    try:
+        return bool(sys.stdin is not None and sys.stdin.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
+def _menu_interactivo(
+    argumentos: argparse.Namespace, config: Configuracion, rutas: dict[str, Path]
+) -> int:
+    """Presenta el menú y ejecuta la acción elegida, en bucle.
+
+    Devuelve siempre :data:`EXITO`: los fallos de cada acción se muestran en
+    su momento y el usuario vuelve al menú, en lugar de cerrarse el programa.
+    """
+    from io_utils.menu import (
+        OpcionMenu,
+        bucle_menu,
+        confirmar,
+        pedir_entero,
+        pedir_opcion_de_lista,
+        pedir_texto,
+    )
+
+    def analizar() -> bool:
+        argumentos.dias = pedir_texto(
+            "\nDías a analizar (vacío = todo; admite 30,60,90)", ""
+        ) or None
+        try:
+            ventanas = _construir_ventanas(argumentos, config)
+        except ValueError as exc:
+            print(f"\nRango de fechas inválido: {exc}")
+            return True
+
+        patrones = cargar_patrones(rutas["patrones"], config.ignorar_mayusculas)
+        if not patrones:
+            print(f"\nNo hay patrones válidos en {rutas['patrones']}.")
+            return True
+
+        modo = pedir_opcion_de_lista(
+            "Modo de búsqueda:", list(MODOS_VALIDOS), argumentos.modo or config.modo_busqueda
+        )
+        motor = MotorBusqueda(patrones, modo, config.evitar_duplicados)
+
+        print()
+        _procesar(config, rutas, motor, argumentos.sin_progreso, ventanas)
+        print(f"\nResultados en: {rutas['resultados']}")
+        return True
+
+    def configurar() -> bool:
+        _configurar(argumentos, rutas)
+        return True
+
+    def listar() -> bool:
+        argumentos.tipo = pedir_opcion_de_lista(
+            "¿Qué quieres ver?", list(TIPOS_CHAT), "grupos"
+        )
+        _listar_chats(argumentos, rutas)
+        return True
+
+    def descargar() -> bool:
+        argumentos.tipo = pedir_opcion_de_lista(
+            "¿De dónde quieres descargar?", list(TIPOS_CHAT), "grupos"
+        )
+        nombre = pedir_texto(
+            "\nChat concreto (nombre, @usuario o ID; vacío = todos del tipo)", ""
+        )
+        argumentos.chat = [nombre] if nombre else None
+        argumentos.limite = pedir_entero("Máximo de mensajes por chat (vacío = todos)")
+
+        if not confirmar("\n¿Empezar la descarga?"):
+            return True
+
+        print()
+        if _descargar(argumentos, rutas):
+            print("\nDescarga terminada. Elige la opción 1 para analizarlo.")
+        return True
+
+    opciones = [
+        OpcionMenu("1", "Analizar los mensajes que ya tengo", analizar),
+        OpcionMenu("2", "Configurar el acceso a Telegram", configurar),
+        OpcionMenu("3", "Ver mis grupos y canales", listar),
+        OpcionMenu("4", "Descargar mensajes de Telegram", descargar),
+        OpcionMenu("5", "Salir", lambda: False),
+    ]
+
+    bucle_menu("TelegramRegexSearch", opciones)
+    return EXITO
 
 
 def _configurar(argumentos: argparse.Namespace, rutas: dict[str, Path]) -> bool:
@@ -721,7 +840,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     argumentos = parsear_argumentos(argv)
     try:
-        return ejecutar(argumentos)
+        return ejecutar(argumentos, argv)
     finally:
         cerrar_logging()
 

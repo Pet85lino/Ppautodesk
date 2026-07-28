@@ -8,7 +8,7 @@ de Telegram exportados, en formato JSON y HTML.
 - Compatible con Windows, Linux y Pydroid 3 (Android).
 - Procesamiento en streaming: un export de 48 MB se analiza con un pico de
   **1,3 MB** de memoria.
-- 214 pruebas automatizadas incluidas.
+- 243 pruebas automatizadas incluidas.
 
 ---
 
@@ -44,7 +44,23 @@ La primera ejecución crea `config.json` y las carpetas `datos/`,
 ### Pydroid 3 (Android)
 
 Copia la carpeta al almacenamiento del dispositivo, abre `main.py` desde la
-app y pulsa el botón de ejecutar. Para analizar exports **no hace falta
+app y pulsa el botón de ejecutar. **Aparecerá un menú**: el botón de Pydroid
+lanza el script sin argumentos, así que todas las acciones se eligen por
+número, sin escribir comandos.
+
+```
+==============================================
+ TelegramRegexSearch
+==============================================
+ 1. Analizar los mensajes que ya tengo
+ 2. Configurar el acceso a Telegram
+ 3. Ver mis grupos y canales
+ 4. Descargar mensajes de Telegram
+ 5. Salir
+```
+
+La primera vez, elige **2** para configurar el acceso; después, **4** para
+descargar y **1** para analizar. Para analizar exports **no hace falta
 instalar ningún paquete**; solo la descarga en vivo necesita Telethon, y el
 asistente se encarga de instalarlo.
 
@@ -84,6 +100,9 @@ escritorio.
 ```bash
 python main.py --configurar
 ```
+
+En Android, o en cualquier sitio donde no quieras escribir comandos, ejecuta
+`main.py` sin argumentos y elige la opción **2** del menú.
 
 El asistente instala lo que falte, te guía para obtener tus credenciales, te
 pide el teléfono y el código de verificación, y comprueba que todo funciona.
@@ -321,6 +340,7 @@ python main.py [opciones]
 | `--hasta AAAA-MM-DD` | Fecha máxima. |
 | `--sin-progreso` | Desactiva la barra de progreso. |
 | `--verbose` | Muestra también los mensajes de depuración. |
+| `--sin-menu` | No abre el menú aunque se ejecute sin argumentos. |
 
 Ejemplos:
 
@@ -512,13 +532,14 @@ TelegramRegexSearch/
 │   └── descargador.py            # Descarga MTProto (opcional)
 ├── io_utils/
 │   ├── exportador.py             # Escribe los .txt de resultados
+│   ├── menu.py                   # Menú interactivo
 │   └── progress.py               # Barra de progreso
 ├── utils/
 │   ├── logger_setup.py           # Logging a proceso.log y error.log
 │   ├── filesystem.py             # Carpetas y saneado de nombres
 │   ├── dependencias.py           # Verifica/instala requisitos
 │   └── credenciales.py           # Carga segura de credenciales
-├── tests/                        # 214 pruebas
+├── tests/                        # 243 pruebas
 ├── datos/                        # Tus exports (vacía al empezar)
 ├── resultados/                   # Salida
 ├── logs/                         # proceso.log y error.log
@@ -561,6 +582,10 @@ lugar de reventar con `UnicodeEncodeError`.
 ---
 
 ## Solución de problemas
+
+**No puedo pasar opciones en Pydroid 3** — No hace falta: ejecuta `main.py`
+sin más y usa el menú. Si prefieres los argumentos, Pydroid los admite en
+⋮ → *Program arguments*, pero el menú es más cómodo desde el móvil.
 
 **"No hay archivos que analizar"** — Los exports deben estar dentro de
 `datos/` (o de la carpeta que indiques con `--datos`) y tener extensión

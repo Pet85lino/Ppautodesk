@@ -3,15 +3,15 @@
 Revisión completa del código previo, corrección de los defectos encontrados y
 verificación de que las correcciones funcionan.
 
-- **Defectos corregidos:** 20
-- **Pruebas automatizadas:** 214 (213 ejecutadas, 1 omitida por requerir Telethon)
+- **Defectos corregidos:** 21
+- **Pruebas automatizadas:** 243 (242 ejecutadas, 1 omitida por requerir Telethon)
 - **Resultado:** todas en verde
 
 ```
 $ python ejecutar_tests.py
-Ran 214 tests in 0.16s
+Ran 243 tests in 0.15s
 OK (skipped=1)
-Resumen: 214 pruebas | 0 fallos | 0 errores | 1 omitidas
+Resumen: 243 pruebas | 0 fallos | 0 errores | 1 omitidas
 ```
 
 ---
@@ -404,6 +404,46 @@ provenga. **Verificación:** `tests/test_filtro_fechas.py`, 32 pruebas.
 
 ---
 
+## 4.quater Toda la funcionalidad era inalcanzable desde el móvil
+
+**Dónde:** `main.py`
+**Severidad:** alta
+**Detectado:** probando en Pydroid 3 sobre Android.
+
+El proyecto se diseñó como herramienta de línea de comandos, con las
+acciones repartidas en opciones: `--configurar`, `--descargar`,
+`--listar-chats`, `--dias`. En Pydroid 3 el botón de ejecutar lanza el script
+**sin argumentos**, y no hay una consola donde escribirlos.
+
+El resultado es que en Android —una de las dos plataformas objetivo del
+proyecto— solo se podía hacer una cosa: analizar lo que ya hubiera en
+`datos/`. Configurar el acceso a Telegram o descargar mensajes era imposible,
+y el programa no daba ninguna pista de que existieran esas opciones.
+
+No era un fallo de código: cada pieza funcionaba. Era un fallo de diseño de
+la interfaz, del tipo que las pruebas automatizadas no detectan porque
+verifican que las funciones hacen lo que dicen, no que el usuario pueda
+llegar a invocarlas.
+
+**Corrección:** nuevo módulo `io_utils/menu.py`. Cuando el programa se lanza
+sin ningún argumento desde una consola interactiva, presenta las mismas
+acciones numeradas. Un fallo en cualquiera de ellas devuelve al menú en lugar
+de cerrar el programa, que es lo que se espera de una interfaz donde relanzar
+el script cuesta varios toques.
+
+La condición de apertura es deliberadamente estricta —sin argumentos **y**
+con entrada interactiva— para que ningún uso automatizado se quede esperando
+una respuesta que nunca llegará. Se añade `--sin-menu` para desactivarlo de
+forma explícita.
+
+**Verificación:** `tests/test_menu.py`, 29 pruebas, incluida la condición de
+apertura en sus cinco casos (con argumentos, sin ellos, sin terminal, con
+`--sin-menu` y con la entrada estándar cerrada). Además se comprobó el menú
+real sobre un pseudoterminal, y que ni una ejecución con argumentos ni una
+con la entrada redirigida lo abren.
+
+---
+
 ## 5. Mantenibilidad
 
 ### 5.1 Dependencia cruzada entre capas
@@ -482,6 +522,11 @@ log y termina con un código de salida limpio. Con la carpeta de datos vacía
 informa del problema con precisión en lugar de fallar de forma oscura, que es
 el comportamiento buscado.
 
+Esa misma prueba destapó el defecto 4.quater: las opciones de consola son
+inalcanzables desde el botón de ejecutar de Pydroid. Es un buen recordatorio
+de que ejecutar el programa en su entorno real encuentra cosas que ninguna
+prueba automatizada iba a encontrar.
+
 **No verificado — y por qué:**
 
 - **La conexión real por MTProto.** Autenticarse requiere el código que
@@ -524,5 +569,5 @@ el comportamiento buscado.
 | Límite de descriptores | Ninguno | Caché LRU |
 | Selección de grupos privados | Imposible sin el ID | Por nombre, ID o @usuario |
 | Filtrado por fechas | No existía | Ventanas múltiples en una pasada |
-| Pruebas automatizadas | 0 | 214 |
+| Pruebas automatizadas | 0 | 243 |
 | Líneas > 100 caracteres | Varias | 0 |
